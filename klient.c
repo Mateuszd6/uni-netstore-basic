@@ -67,7 +67,8 @@ main(int argc, char** argv)
     freeaddrinfo(addr_result);
 
     { // TEST AREA: DANGER, DONT ENTER!
-        write(sock, "Mateusz", sizeof("Mateusz"));
+        int16 msg_get = htons(1);
+        send(sock, &msg_get, 2, 0);
         char b[1024];
 
         int err = read_bytes(sock, (uint8*)b, 6);

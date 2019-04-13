@@ -1,10 +1,13 @@
 #include <assert.h>
+#include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
-
 #include "common.h"
+#include "err.h"
 
 void
 bad_usage(char const* usage_msg)
@@ -40,4 +43,17 @@ read_bytes(int fd, uint8* buffer, size_t count)
     }
 
     return 0;
+}
+
+void
+syserr(const char* fmt, ...)
+{
+    va_list fmt_args;
+
+    fprintf(stderr, "ERROR: ");
+    va_start(fmt_args, fmt);
+    vfprintf(stderr, fmt, fmt_args);
+    va_end(fmt_args);
+    fprintf(stderr, " (%d; %s)\n", errno, strerror(errno));
+    exit(2);
 }

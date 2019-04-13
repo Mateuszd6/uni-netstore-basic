@@ -42,4 +42,8 @@ void bad_usage(char const* usage_msg);
 // TODO: What is returned on error or if less bytes is present?
 int read_bytes(int fd, uint8* buffer, size_t count);
 
+
+// Reports the system function error, then terminates the program.
+void syserr(const char* fmt, ...);
+
 #endif // COMMON_H

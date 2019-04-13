@@ -76,26 +76,25 @@ int main(int argc, char** argv)
                           (struct sockaddr*)&client_address,
                           &client_address_len);
 
-        ssize_t len;
+        fprintf(stderr, "Accepted!\n");
+
         if (msg_sock < 0)
             assert(!("accept"));
-        do
+
+        // TODO: Discover, why this 0 bytes packet is so important.
+        for(;;)
         {
-            char buffer[1024];
-            len = read(msg_sock, buffer, sizeof(buffer));
-            // TODO: Handle read.
-#if 0
-            if (len < 0)
-                assert(!("reading from client socket"));
-            else
+            char buffer[2];
+            ssize_t len = recv(msg_sock, buffer, 2, 0);
+            if (len == 0) // TODO: Handle this case, and handle -1!!
             {
-                printf("read from socket: %zd bytes: %.*s\n", len, (int)len, buffer);
-                // snd_len = write(msg_sock, buffer, len);
-                snd_len = send(msg_sock, buffer, len, MSG_NOSIGNAL);
-                if (snd_len != len)
-                    assert(!("writing to client socket"));
+                fprintf(stderr, "Got 0, doing nothing!\n");
+                break;
             }
-#endif
+
+            int16 action_type = ntohs(* ((int16*)buffer));
+            fprintf(stderr, "rcved action type: %d\n", (int32)action_type);
+
             exbuffer ebuf;
             exbuffer_init(&ebuf, 0);
             int16 num_to_send = htons(1);
@@ -137,11 +136,11 @@ int main(int argc, char** argv)
             if (snd_len != ebuf.size)
                 assert(!("writing to client socket"));
 
-        } while (len > 0);
+            exbuffer_free(&ebuf);
+        }
 
         printf("ending connection\n");
-        if (close(msg_sock) < 0)
-            assert(!("close"));
+        close(msg_sock); // TODO: error.
     }
 
     return 0;
