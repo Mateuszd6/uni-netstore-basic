@@ -33,7 +33,7 @@ debug:
 	$(INCLUDE_FLAGS) $(SANITIZERS) serwer.c common.o exbuffer.o -o netstore-server
 
 	$(CC) $(CFLAGS) $(WARN_FLAGS) $(DISABLED_WARNINGS) $(DEBUG_FLAGS)   \
-	$(INCLUDE_FLAGS) $(SANITIZERS) klient.c common.o -o netstore-client
+	$(INCLUDE_FLAGS) $(SANITIZERS) klient.c common.o exbuffer.o -o netstore-client
 
 release:
 	$(CC) -c $(CFLAGS) $(WARN_FLAGS) $(DISABLED_WARNINGS) $(RELEASE_FLAGS)   \

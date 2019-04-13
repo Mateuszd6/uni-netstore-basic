@@ -42,7 +42,7 @@ exbuffer_reserve(exbuffer* self, size_t min_capacity_after)
 int
 exbuffer_append(exbuffer* self, uint8* data, size_t len)
 {
-    exbuffer_reserve(self, self->capacity + len);
+    exbuffer_reserve(self, self->size + len);
     for (size_t i = 0; i != len; ++i)
         self->data[self->size++] = data[i];
 

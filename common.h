@@ -40,7 +40,7 @@ void bad_usage(char const* usage_msg);
 // than [count] it will be called again until exacly [count] bytes are
 // read. [buffer] is assumed to be at least [count] bytes long
 // TODO: What is returned on error or if less bytes is present?
-int read_bytes(int fd, uint8* buffer, size_t count);
+ssize_t read_bytes(int fd, uint8* buffer, size_t count);
 
 
 // Reports the system function error, then terminates the program.

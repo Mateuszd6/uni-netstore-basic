@@ -16,7 +16,7 @@ bad_usage(char const* usage_msg)
     exit(0);
 }
 
-int
+ssize_t
 read_bytes(int fd, uint8* buffer, size_t count)
 {
     if (count == 0)
@@ -33,8 +33,8 @@ read_bytes(int fd, uint8* buffer, size_t count)
 
         if (bytes_red == 0)
         {
-            // TODO: What now?
             fprintf(stderr, "Counldn't read exacly %ld bytes!\n", count);
+            return loaded;
         }
 
         assert((size_t)bytes_red <= remained);
@@ -42,7 +42,7 @@ read_bytes(int fd, uint8* buffer, size_t count)
         loaded += bytes_red;
     }
 
-    return 0;
+    return loaded;
 }
 
 void
