@@ -208,7 +208,7 @@ main(int argc, char** argv)
         // Refuse
         if (code == 2)
         {
-            fprintf(stderr, "Server refused. Reason: %s\n",
+            fprintf(stderr, "Server refused, reason: %s\n",
                     file_refuse_tostr(following));
         }
         else
@@ -228,12 +228,28 @@ main(int argc, char** argv)
             fprintf(stderr, "output path: %s\n", path_combined);
 
             FILE *f = fopen(path_combined , "r+");
+            if (!f)
+            {
+                f = fopen(path_combined, "w+");
+                fprintf(stderr, "File is created, because it does not exist.\n");
+            }
+
+            // TODO: Better error handling/
+            if (!f)
+                syserr("fopen");
+
             err = fseek(f, addr_from, SEEK_SET);
             if (err == -1)
                 syserr("fseek");
 
-            fwrite(rcv_file_buffer, following, 1, f);
-            fclose(f);
+            fprintf(stderr, "Writing %u bytes\n", following);
+            err = fwrite(rcv_file_buffer, 1, following, f);
+            if (err == -1)
+                syserr("fwrite");
+
+            err = fclose(f);
+            if (err == -1)
+                syserr("fclose");
         }
 
         printf("Received something(%d bytes), this is fine!\n", err);

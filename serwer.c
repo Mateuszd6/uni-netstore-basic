@@ -36,7 +36,10 @@ parse_input(int argc, char** argv)
 static char*
 read_file_offset(char const* filename, size_t offset, size_t len)
 {
-    FILE *f = fopen(filename, "rb");
+    if (len == 0)
+        return NULL;
+
+    FILE *f = fopen(filename, "r");
     if (!f)
         return NULL;
 
@@ -181,13 +184,25 @@ int main(int argc, char** argv)
 
             exbuffer_init(&ebuf, 1);
             char* reqfile = read_file_offset((char*)name_buffer, addr_from, addr_len);
-            fprintf(stderr, "Requested str has len: %ld\n", strlen(reqfile));
-            // TODO: Check offsets, etc, etc...
 
+            fprintf(stderr, "Requested string %s %lu\n",
+                    reqfile ? "had length" : "doesn't exist",
+                    reqfile ? strlen(reqfile) : 0);
             if (reqfile)
+                fprintf(stderr, "  str: '%s'\n", reqfile);
+
+            int error_code = 0;
+            if (addr_len == 0)
+                error_code = 3;
+            else if (!reqfile)
+                error_code = 1;
+            else if (reqfile[0] == 0)
+                error_code = 2;
+
+            if (error_code == 0)
             {
                 int16 msg_code = htons(3);
-                int32 msg_filename = htonl(strlen(reqfile)); // TODO: strip the file.
+                int32 msg_filename = htonl(strlen(reqfile));
 
                 exbuffer_append(&ebuf, (uint8*)(&msg_code), 2);
                 exbuffer_append(&ebuf, (uint8*)(&msg_filename), 4);
@@ -196,7 +211,7 @@ int main(int argc, char** argv)
             else
             {
                 int16 msg_code = htons(2);
-                int32 msg_reason = htonl(1); // TODO: strip the file.
+                int32 msg_reason = htonl(error_code);
 
                 exbuffer_append(&ebuf, (uint8*)(&msg_code), 2);
                 exbuffer_append(&ebuf, (uint8*)(&msg_reason), 4);
