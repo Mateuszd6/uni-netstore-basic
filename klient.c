@@ -14,15 +14,6 @@
 
 #define USAGE_MSG "netstore_client <nazwa-lub-adres-IP4-serwera> [<numer-portu-serwera>]"
 
-#define CHECK(VAL)                              \
-    do {                                        \
-        int checked_val_ = (VAL);               \
-        if (checked_val_ != 0) {                                 \
-            fprintf(stderr, "ERROR, %s:%d: val: %d\n", __FILE__, __LINE__, checked_val_); \
-            exit(1);                                             \
-        }                                                        \
-    } while(0)
-
 typedef struct
 {
     char const* host;
@@ -57,7 +48,7 @@ make_temp_dir_if_not_exists()
     int result = mkdir("./tmp", 0777);
     if (result == -1 && errno != EEXIST)
     {
-        syserr("mkdir");
+        FAILWITH_ERRNO();
     }
 }
 
@@ -107,9 +98,8 @@ main(int argc, char** argv)
         char b[1024];
 
         {
-            int loaded = read_bytes(sock, (uint8*)b, 6);
-            if (loaded == -1)
-                syserr("read");
+            int loaded = 0;
+            CHECK(loaded = read_bytes(sock, (uint8*)b, 6));
             if (loaded != 6)
                 fprintf(stderr, "Could not read everything!\n");
         }
@@ -126,9 +116,8 @@ main(int argc, char** argv)
 
         char* names = malloc(dirnames_size + 1);
         {
-            int loaded = read_bytes(sock, (uint8*)names, dirnames_size);
-            if (loaded == -1)
-                syserr("read");
+            int loaded = 0;
+            CHECK(loaded = read_bytes(sock, (uint8*)names, dirnames_size));
             if (loaded != dirnames_size)
                 fprintf(stderr, "Could not read everything!");
         }
@@ -196,9 +185,7 @@ main(int argc, char** argv)
         write(sock, ebuf.data, ebuf.size);
 
         uint8 rcv_header[6];
-        int err = read_bytes(sock, rcv_header, 6);
-        if (err == -1)
-            syserr("read");
+        CHECK(read_bytes(sock, rcv_header, 6));
 
         int16 code = ntohs(*((int16*)(rcv_header)));
         int32 following = ntohl(*((int32*)(rcv_header + 2)));
@@ -215,9 +202,7 @@ main(int argc, char** argv)
         {
             uint8 rcv_file_buffer[following];
             fprintf(stderr, "Got %u bytes of file.\n", following);
-            err = read_bytes(sock, rcv_file_buffer, following);
-            if (err == -1)
-                syserr("read");
+            CHECK(read_bytes(sock, rcv_file_buffer, following));
 
             make_temp_dir_if_not_exists();
 
@@ -236,23 +221,14 @@ main(int argc, char** argv)
 
             // TODO: Better error handling/
             if (!f)
-                syserr("fopen");
+                FAILWITH_ERRNO();
 
-            err = fseek(f, addr_from, SEEK_SET);
-            if (err == -1)
-                syserr("fseek");
+            CHECK(fseek(f, addr_from, SEEK_SET));
 
             fprintf(stderr, "Writing %u bytes\n", following);
-            err = fwrite(rcv_file_buffer, 1, following, f);
-            if (err == -1)
-                syserr("fwrite");
-
-            err = fclose(f);
-            if (err == -1)
-                syserr("fclose");
+            CHECK(fwrite(rcv_file_buffer, 1, following, f));
+            CHECK(fclose(f));
         }
-
-        printf("Received something(%d bytes), this is fine!\n", err);
 
         exbuffer_free(&ebuf);
     } // endof TEST AREA.

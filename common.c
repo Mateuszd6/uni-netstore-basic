@@ -47,14 +47,10 @@ read_bytes(int fd, uint8* buffer, size_t count)
 }
 
 void
-syserr(const char* fmt, ...)
+die_witherrno(char const* filename, int line)
 {
-    va_list fmt_args;
+    fprintf(stderr, "%s:%d: ERROR: function failed with: %d (%s).\n",
+           filename, line, errno, strerror(errno));
 
-    fprintf(stderr, "ERROR: ");
-    va_start(fmt_args, fmt);
-    vfprintf(stderr, fmt, fmt_args);
-    va_end(fmt_args);
-    fprintf(stderr, " (%d; %s)\n", errno, strerror(errno));
     exit(2);
 }

@@ -43,7 +43,19 @@ void bad_usage(char const* usage_msg);
 ssize_t read_bytes(int fd, uint8* buffer, size_t count);
 
 
-// Reports the system function error, then terminates the program.
-void syserr(const char* fmt, ...);
+#define CHECK(EXPR)                                                     \
+    do {                                                                \
+        int reterr_ = (EXPR);                                           \
+        if (reterr_ < 0)                                                \
+            die_witherrno(__FILE__, __LINE__);                          \
+    } while(0)
+
+#define FAILWITH_ERRNO()                                                \
+    do {                                                                \
+        die_witherrno(__FILE__, __LINE__);                              \
+    } while(0)
+
+void
+die_witherrno(char const* filename, int line);
 
 #endif // COMMON_H

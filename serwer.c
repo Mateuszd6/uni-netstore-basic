@@ -66,9 +66,7 @@ int main(int argc, char** argv)
     struct sockaddr_in client_address;
     socklen_t client_address_len;
 
-    sock = socket(PF_INET, SOCK_STREAM, 0); // creating IPv4 TCP socket
-    if (sock < 0)
-        assert(!("socket"));
+    CHECK((sock = socket(PF_INET, SOCK_STREAM, 0))); // creating IPv4 TCP socket
     // after socket() call; we should close(sock) on any execution path;
     // since all execution paths exit immediately, sock would be closed when
     // program terminates
@@ -78,11 +76,7 @@ int main(int argc, char** argv)
     server_address.sin_port = htons(atoi(idata.port)); // listening on port PORT_NUM
 
     // bind the socket to a concrete address
-    if (bind(sock, (struct sockaddr*)&server_address, sizeof(server_address)) < 0)
-    {
-        fprintf(stderr, "BIND: %d %s\n", errno, strerror(errno));
-        assert(!("bind"));
-    }
+    CHECK(bind(sock, (struct sockaddr*)&server_address, sizeof(server_address)));
 
     // switch to listening (passive open)
     if (listen(sock, 5) < 0) // TODO: 5 was macroed as QUEUE_LEN
@@ -97,14 +91,9 @@ int main(int argc, char** argv)
 
         client_address_len = sizeof(client_address);
         // get client connection from the socket
-        msg_sock = accept(sock,
-                          (struct sockaddr*)&client_address,
-                          &client_address_len);
-
-        fprintf(stderr, "Accepted!\n");
-
-        if (msg_sock < 0)
-            assert(!("accept"));
+        CHECK(msg_sock = accept(sock,
+                                (struct sockaddr*)&client_address,
+                                &client_address_len));
 
         // TODO: Discover, why this 0 bytes packet is so important.
         {
@@ -159,9 +148,8 @@ int main(int argc, char** argv)
             exbuffer_free(&ebuf);
 
             uint8 header_buffer[10];
-            int loaded = read_bytes(msg_sock, header_buffer, 10);
-            if (loaded == -1)
-                syserr("read");
+            int loaded = 0;
+            CHECK(loaded = read_bytes(msg_sock, header_buffer, 10));
             if (loaded != 10)
                 fprintf(stderr, "Could not read everything!\n");
 
@@ -173,9 +161,7 @@ int main(int argc, char** argv)
                     addr_from, addr_len, (uint16)filename_len);
 
             uint8 name_buffer[filename_len + 1];
-            loaded = read_bytes(msg_sock, name_buffer, filename_len);
-            if (loaded == -1)
-                syserr("read");
+            CHECK(loaded = read_bytes(msg_sock, name_buffer, filename_len));
             if (loaded != filename_len)
                 fprintf(stderr, "Could not read everything!\n");
 
