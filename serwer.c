@@ -206,7 +206,16 @@ int main(int argc, char** argv)
 
                 exbuffer_append(&ebuf, (uint8*)(&msg_code), 2);
                 exbuffer_append(&ebuf, (uint8*)(&msg_filename), 4);
-                exbuffer_append(&ebuf, (uint8*)reqfile, strlen(reqfile));
+                // exbuffer_append(&ebuf, (uint8*)reqfile, );
+                write(msg_sock, ebuf.data, ebuf.size);
+
+                size_t send_len = strlen(reqfile);
+                int block_size = 3;
+                for (size_t i = 0; i < send_len; i += block_size)
+                {
+                    write(msg_sock, reqfile, i + block_size > send_len ? send_len - i : (size_t)block_size);
+                    sleep(1);
+                }
             }
             else
             {
@@ -215,11 +224,11 @@ int main(int argc, char** argv)
 
                 exbuffer_append(&ebuf, (uint8*)(&msg_code), 2);
                 exbuffer_append(&ebuf, (uint8*)(&msg_reason), 4);
+                write(msg_sock, ebuf.data, ebuf.size);
             }
 
             if (reqfile)
                 free(reqfile);
-            write(msg_sock, ebuf.data, ebuf.size);
 
             // This is received while end.
             ssize_t end_msg_len = read(msg_sock, buffer, 2);

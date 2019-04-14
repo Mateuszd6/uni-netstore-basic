@@ -214,7 +214,7 @@ main(int argc, char** argv)
         else
         {
             uint8 rcv_file_buffer[following];
-            fprintf(stderr, "Got %u bytes of file. ", following);
+            fprintf(stderr, "Got %u bytes of file.\n", following);
             err = read_bytes(sock, rcv_file_buffer, following);
             if (err == -1)
                 syserr("read");

@@ -38,6 +38,7 @@ read_bytes(int fd, uint8* buffer, size_t count)
         }
 
         assert((size_t)bytes_red <= remained);
+        fprintf(stderr, "-> read_bytes: Got %d bytes\n", bytes_red);
         remained -= bytes_red;
         loaded += bytes_red;
     }
