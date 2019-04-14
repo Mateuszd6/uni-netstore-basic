@@ -13,13 +13,15 @@ typedef struct
     size_t capacity;
 } exbuffer;
 
-// TODO: Return -1 and set errno when oom.
+// -1 is returned when malloc failes, otherwise 0.
 int exbuffer_init(exbuffer* self, size_t initial_capacity);
 
 void exbuffer_free(exbuffer* self);
 
+// -1 is returned when malloc/realloc failes, otherwise 0.
 int exbuffer_reserve(exbuffer* self, size_t min_capacity_after);
 
+// -1 is returned when malloc/realloc failes, otherwise 0.
 int exbuffer_append(exbuffer* self, uint8* data, size_t len);
 
 #endif // EXBUFFER_H

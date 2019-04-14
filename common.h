@@ -14,36 +14,20 @@ typedef uint64_t uint64;
 typedef float real32;
 typedef double real64;
 
-// Endian swap macros:
-#define BSWAP16(VAL)                            \
-    do {                                        \
-        assert(sizeof(VAL) == 2);               \
-        VAL = (VAL >> 8) | (VAL << 8);          \
-    } while (0)
+#define PROT_REQ_FILELIST (1)
+#define PROT_REQ_FILECHUNK (2)
 
-#define BSWAP32(VAL)                            \
-    do {                                        \
-        assert(sizeof(VAL) == 4);               \
-        VAL = ((VAL >> 24) & 0xff) |            \
-            ((VAL << 8) & 0xff0000) |           \
-            ((VAL >> 8) & 0xff00) |             \
-            ((VAL << 24) & 0xff000000);         \
-    } while (0)
+#define PROT_RESP_FILELIST (1)
+#define PROT_RESP_FILECHUNK_ERROR (2)
+#define PROT_RESP_FILECHUNK_OK (3)
+
+#define FREQ_ERROR_ON_SUCH_FILE (1)
+#define FREQ_ERROR_OUT_OF_RANGE (2)
+#define FREQ_ERROR_ZERO_LEN (3)
+
 
 // Default port for both programs.
 static char const* const default_port = "6543";
-
-// Print the usage message to the console, and close the program.
-void bad_usage(char const* usage_msg);
-
-// Read exacly count bytes from the descriptor. If read will return less bytes
-// than [count] it will be called again until exacly [count] bytes are
-// read. [buffer] is assumed to be at least [count] bytes long.  Returns -1 on
-// error, -2 when the eof is reached, but insufficient number of bytes have been
-// read, or 0 on success.
-int read_total(int fd, uint8* buffer, size_t count);
-
-int send_total(int fd, uint8* buffer, size_t count);
 
 #define CHECK(EXPR)                                                     \
     do {                                                                \
@@ -60,12 +44,22 @@ int send_total(int fd, uint8* buffer, size_t count);
 void
 die_witherrno(char const* filename, int line);
 
+// Print the usage message to the console, and close the program.
+void bad_usage(char const* usage_msg);
+
+// Read exacly count bytes from the descriptor. If read will return less bytes
+// than [count] it will be called again until exacly [count] bytes are
+// read. [buffer] is assumed to be at least [count] bytes long.  Returns -1 on
+// error, -2 when the eof is reached, but insufficient number of bytes have been
+// read, or 0 on success.
+int read_total(int fd, uint8* buffer, size_t count);
+
+int send_total(int fd, uint8* buffer, size_t count);
 
 // Im not entierly sure if they are needed, but I'm using them for
 // safetly. These are used to convert a string of bytes with random aligment to
 // the integers.
 uint16 unaligned_load_int16be(uint8* data);
 uint32 unaligned_load_int32be(uint8* data);
-
 
 #endif // COMMON_H
