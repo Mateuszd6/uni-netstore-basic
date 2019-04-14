@@ -79,8 +79,7 @@ int main(int argc, char** argv)
     CHECK(bind(sock, (struct sockaddr*)&server_address, sizeof(server_address)));
 
     // switch to listening (passive open)
-    if (listen(sock, 5) < 0) // TODO: 5 was macroed as QUEUE_LEN
-        assert(!("listen"));
+    CHECK(listen(sock, 5)); // TODO: 5 was macroed as QUEUE_LEN
 
     printf("accepting client connections on port %hu\n",
            ntohs(server_address.sin_port));
@@ -95,134 +94,139 @@ int main(int argc, char** argv)
                                 (struct sockaddr*)&client_address,
                                 &client_address_len));
 
-        // TODO: Discover, why this 0 bytes packet is so important.
+        uint8 buffer[2];
+        int read_total_err = 0;
+        CHECK(read_total_err = read_total(msg_sock, buffer, 2));
+        if (read_total_err != 0) // TODO: Handle this case, and handle -1!!
         {
-            char buffer[2];
-            ssize_t len = read(msg_sock, buffer, 2);
-            if (len == 0) // TODO: Handle this case, and handle -1!!
-            {
-                fprintf(stderr, "Got 0, doing nothing!\n");
-                break;
-            }
-
-            int16 action_type = ntohs(* ((int16*)buffer));
-            fprintf(stderr, "rcved action type: %d\n", (int32)action_type);
-
-            exbuffer ebuf;
-            int16 num_to_send = htons(1);
-            int32 sizeof_filenames = 0; // We dont know yet how much space.
-            exbuffer_init(&ebuf, 0);
-            exbuffer_append(&ebuf, (uint8*)(&num_to_send), 2);
-            exbuffer_append(&ebuf, (uint8*)(&sizeof_filenames), 4);
-
-            for (int i =0; i < 6; ++i)
-                fprintf(stderr, "%u ", ebuf.data[i]);
-            fprintf(stderr, "\n");
-
-            DIR *d;
-            struct dirent *dir;
-            d = opendir(idata.dirname);
-            if (d)
-            {
-                while ((dir = readdir(d)) != NULL)
-                {
-                    // TODO: Ask if only files, or what to do with dirs!
-                    char separator[] = "|";
-                    exbuffer_append(&ebuf, (uint8*)(dir->d_name), strlen(dir->d_name));
-                    exbuffer_append(&ebuf, (uint8*)separator, 1); // TODO: ARRAY_COUNT
-                }
-
-                closedir(d);
-            }
-            else
-                assert(!("No such directory!"));
-
-            // Now we know how much space filenames really take.
-            sizeof_filenames = htonl(ebuf.size - 6);
-            memcpy(ebuf.data + 2, (uint8*)(&sizeof_filenames), 4);
-
-            size_t snd_len = write(msg_sock, ebuf.data, ebuf.size);
-            if (snd_len != ebuf.size)
-                assert(!("writing to client socket"));
-            fprintf(stderr, "data was sent\n");
-            exbuffer_free(&ebuf);
-
-            uint8 header_buffer[10];
-            int loaded = 0;
-            CHECK(loaded = read_bytes(msg_sock, header_buffer, 10));
-            if (loaded != 10)
-                fprintf(stderr, "Could not read everything!\n");
-
-            uint32 addr_from = ntohl(*((uint32*)header_buffer));
-            uint32 addr_len = ntohl(*((uint32*)(header_buffer + 4)));
-            uint16 filename_len = ntohs(*((uint16*)(header_buffer + 8)));
-
-            fprintf(stderr, "[%u - %u], filename has %u chars\n",
-                    addr_from, addr_len, (uint16)filename_len);
-
-            uint8 name_buffer[filename_len + 1];
-            CHECK(loaded = read_bytes(msg_sock, name_buffer, filename_len));
-            if (loaded != filename_len)
-                fprintf(stderr, "Could not read everything!\n");
-
-            name_buffer[filename_len] = '\0';
-            fprintf(stderr, "Filename is: %s\n", name_buffer);
-
-            exbuffer_init(&ebuf, 1);
-            char* reqfile = read_file_offset((char*)name_buffer, addr_from, addr_len);
-
-            fprintf(stderr, "Requested string %s %lu\n",
-                    reqfile ? "had length" : "doesn't exist",
-                    reqfile ? strlen(reqfile) : 0);
-            if (reqfile)
-                fprintf(stderr, "  str: '%s'\n", reqfile);
-
-            int error_code = 0;
-            if (addr_len == 0)
-                error_code = 3;
-            else if (!reqfile)
-                error_code = 1;
-            else if (reqfile[0] == 0)
-                error_code = 2;
-
-            if (error_code == 0)
-            {
-                int16 msg_code = htons(3);
-                int32 msg_filename = htonl(strlen(reqfile));
-
-                exbuffer_append(&ebuf, (uint8*)(&msg_code), 2);
-                exbuffer_append(&ebuf, (uint8*)(&msg_filename), 4);
-                // exbuffer_append(&ebuf, (uint8*)reqfile, );
-                write(msg_sock, ebuf.data, ebuf.size);
-
-                size_t send_len = strlen(reqfile);
-                int block_size = 3;
-                for (size_t i = 0; i < send_len; i += block_size)
-                {
-                    write(msg_sock, reqfile, i + block_size > send_len ? send_len - i : (size_t)block_size);
-                    sleep(1);
-                }
-            }
-            else
-            {
-                int16 msg_code = htons(2);
-                int32 msg_reason = htonl(error_code);
-
-                exbuffer_append(&ebuf, (uint8*)(&msg_code), 2);
-                exbuffer_append(&ebuf, (uint8*)(&msg_reason), 4);
-                write(msg_sock, ebuf.data, ebuf.size);
-            }
-
-            if (reqfile)
-                free(reqfile);
-
-            // This is received while end.
-            ssize_t end_msg_len = read(msg_sock, buffer, 2);
-            if (end_msg_len != 0) // TODO: Handle this case, and handle -1!!
-                fprintf(stderr, "Exit message has something! This is kind of bad!\n");
-            else
-                fprintf(stderr, "Client has eneded.\n");
+            fprintf(stderr, "Got 0, doing nothing!\n");
+            break;
         }
+
+        int16 action_type = ntohs(* ((int16*)buffer));
+        fprintf(stderr, "rcved action type: %d\n", (int32)action_type);
+
+        exbuffer ebuf;
+        int16 num_to_send = htons(1);
+        int32 sizeof_filenames = 0; // We dont know yet how much space.
+        CHECK(exbuffer_init(&ebuf, 0));
+        CHECK(exbuffer_append(&ebuf, (uint8*)(&num_to_send), 2));
+        CHECK(exbuffer_append(&ebuf, (uint8*)(&sizeof_filenames), 4));
+
+        for (int i =0; i < 6; ++i)
+            fprintf(stderr, "%u ", ebuf.data[i]);
+        fprintf(stderr, "\n");
+
+        DIR *d;
+        struct dirent *dir;
+        d = opendir(idata.dirname);
+        if (d)
+        {
+            while ((dir = readdir(d)) != NULL)
+            {
+                // TODO: Ask if only files, or what to do with dirs!
+                char separator[] = "|";
+                CHECK(exbuffer_append(&ebuf, (uint8*)(dir->d_name), strlen(dir->d_name)));
+                CHECK(exbuffer_append(&ebuf, (uint8*)separator, 1)); // TODO: ARRAY_COUNT
+            }
+
+            closedir(d);
+        }
+        else
+            assert(!("No such directory!"));
+
+        // Now we know how much space filenames really take.
+        sizeof_filenames = htonl(ebuf.size - 6);
+        memcpy(ebuf.data + 2, (uint8*)(&sizeof_filenames), 4);
+
+        size_t snd_len = write(msg_sock, ebuf.data, ebuf.size);
+        if (snd_len != ebuf.size)
+            assert(!("writing to client socket"));
+        fprintf(stderr, "data was sent\n");
+        exbuffer_free(&ebuf);
+
+        uint8 header_buffer[10];
+        read_total_err = 0;
+        CHECK(read_total_err = read_total(msg_sock, header_buffer, 10));
+        if (read_total_err != 0) // Not a system error.
+        {
+            // TODO!
+            fprintf(stderr, "Could not read everything!\n");
+            exit(-1);
+        }
+
+        uint32 addr_from = ntohl(*((uint32*)header_buffer));
+        uint32 addr_len = ntohl(*((uint32*)(header_buffer + 4)));
+        uint16 filename_len = ntohs(*((uint16*)(header_buffer + 8)));
+
+        fprintf(stderr, "[%u - %u], filename has %u chars\n",
+                addr_from, addr_len, (uint16)filename_len);
+
+        uint8 name_buffer[filename_len + 1];
+        CHECK(read_total_err = read_total(msg_sock, name_buffer, filename_len));
+        if (read_total_err != 0) // Not a system error.
+        {
+            // TODO!
+            fprintf(stderr, "Could not read everything!\n");
+            exit(-1);
+        }
+
+        name_buffer[filename_len] = '\0';
+        fprintf(stderr, "Filename is: %s\n", name_buffer);
+
+        CHECK(exbuffer_init(&ebuf, 1));
+        char* reqfile = read_file_offset((char*)name_buffer, addr_from, addr_len);
+
+        fprintf(stderr, "Requested string %s %lu\n",
+                reqfile ? "had length" : "doesn't exist",
+                reqfile ? strlen(reqfile) : 0);
+        if (reqfile)
+            fprintf(stderr, "  str: '%s'\n", reqfile);
+
+        int error_code = 0;
+        if (addr_len == 0)
+            error_code = 3;
+        else if (!reqfile)
+            error_code = 1;
+        else if (reqfile[0] == 0)
+            error_code = 2;
+
+        if (error_code == 0)
+        {
+            int16 msg_code = htons(3);
+            int32 msg_filename = htonl(strlen(reqfile));
+
+            CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_code), 2));
+            CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_filename), 4));
+            write(msg_sock, ebuf.data, ebuf.size);
+
+            size_t send_len = strlen(reqfile);
+            int block_size = 3;
+            for (size_t i = 0; i < send_len; i += block_size)
+            {
+                write(msg_sock, reqfile, i + block_size > send_len ? send_len - i : (size_t)block_size);
+                sleep(1);
+            }
+        }
+        else
+        {
+            int16 msg_code = htons(2);
+            int32 msg_reason = htonl(error_code);
+
+            CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_code), 2));
+            CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_reason), 4));
+            write(msg_sock, ebuf.data, ebuf.size);
+        }
+
+        if (reqfile)
+            free(reqfile);
+
+        // This is received while end.
+        ssize_t end_msg_len = read(msg_sock, buffer, 2);
+        if (end_msg_len != 0) // TODO: Handle this case, and handle -1!!
+            fprintf(stderr, "Exit message has something! This is kind of bad!\n");
+        else
+            fprintf(stderr, "Client has eneded.\n");
 
         printf("ending connection\n");
         close(msg_sock); // TODO: error.

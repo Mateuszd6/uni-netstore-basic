@@ -38,15 +38,15 @@ void bad_usage(char const* usage_msg);
 
 // Read exacly count bytes from the descriptor. If read will return less bytes
 // than [count] it will be called again until exacly [count] bytes are
-// read. [buffer] is assumed to be at least [count] bytes long
-// TODO: What is returned on error or if less bytes is present?
-ssize_t read_bytes(int fd, uint8* buffer, size_t count);
-
+// read. [buffer] is assumed to be at least [count] bytes long.  Returns -1 on
+// error, -2 when the eof is reached, but insufficient number of bytes have been
+// read, or 0 on success.
+int read_total(int fd, uint8* buffer, size_t count);
 
 #define CHECK(EXPR)                                                     \
     do {                                                                \
         int reterr_ = (EXPR);                                           \
-        if (reterr_ < 0)                                                \
+        if (reterr_ == -1)                                              \
             die_witherrno(__FILE__, __LINE__);                          \
     } while(0)
 

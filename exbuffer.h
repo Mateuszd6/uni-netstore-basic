@@ -1,7 +1,8 @@
 #ifndef EXBUFFER_H
 #define EXBUFFER_H
 
-#include <assert.h>
+// An implementation of the expandable buffer so that its easier to write bytes
+// into a buffer when the length of the buffer is not known.
 
 #include "common.h"
 

@@ -98,10 +98,14 @@ main(int argc, char** argv)
         char b[1024];
 
         {
-            int loaded = 0;
-            CHECK(loaded = read_bytes(sock, (uint8*)b, 6));
-            if (loaded != 6)
+            int read_total_err = 0;
+            CHECK(read_total_err = read_total(sock, (uint8*)b, 6));
+            if (read_total_err != 0) // Not a system error.
+            {
+                // TODO!
                 fprintf(stderr, "Could not read everything!\n");
+                exit(-1);
+            }
         }
 
 
@@ -116,10 +120,14 @@ main(int argc, char** argv)
 
         char* names = malloc(dirnames_size + 1);
         {
-            int loaded = 0;
-            CHECK(loaded = read_bytes(sock, (uint8*)names, dirnames_size));
-            if (loaded != dirnames_size)
-                fprintf(stderr, "Could not read everything!");
+            int read_total_err = 0;
+            CHECK(read_total_err = read_total(sock, (uint8*)names, dirnames_size));
+            if (read_total_err != 0) // Not a system error.
+            {
+                // TODO!
+                fprintf(stderr, "Could not read everything!\n");
+                exit(-1);
+            }
         }
 
         fprintf(stderr, "Dir contains:\n");
@@ -185,7 +193,14 @@ main(int argc, char** argv)
         write(sock, ebuf.data, ebuf.size);
 
         uint8 rcv_header[6];
-        CHECK(read_bytes(sock, rcv_header, 6));
+        int read_total_err = 0;
+        CHECK(read_total_err = read_total(sock, rcv_header, 6));
+        if (read_total_err != 0) // Not a system error.
+        {
+            // TODO!
+            fprintf(stderr, "Could not read everything!\n");
+            exit(-1);
+        }
 
         int16 code = ntohs(*((int16*)(rcv_header)));
         int32 following = ntohl(*((int32*)(rcv_header + 2)));
@@ -202,7 +217,13 @@ main(int argc, char** argv)
         {
             uint8 rcv_file_buffer[following];
             fprintf(stderr, "Got %u bytes of file.\n", following);
-            CHECK(read_bytes(sock, rcv_file_buffer, following));
+            CHECK(read_total_err = read_total(sock, rcv_file_buffer, following));
+            if (read_total_err != 0) // Not a system error.
+            {
+                // TODO!
+                fprintf(stderr, "Could not read everything!\n");
+                exit(-1);
+            }
 
             make_temp_dir_if_not_exists();
 
