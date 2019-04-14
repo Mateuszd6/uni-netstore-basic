@@ -20,13 +20,6 @@ typedef struct
     char const* port;
 } input_data;
 
-
-/*
-    zła nazwa pliku (być może plik w międzyczasie zniknął),
-    nieprawidłowy (w danym momencie) adres początku fragmentu: większy niż (rozmiar-pliku - 1),
-    podano zerowy rozmiar fragmentu.
-*/
-
 char const refuse_invalid_name[] = "Invalid file name.";
 char const refuse_invalid_address[] = "Invalid starting file address (out of range).";
 char const refuse_invalid_len[] = "Region has length 0.";
@@ -95,7 +88,7 @@ main(int argc, char** argv)
     { // TEST AREA: DANGER, DONT ENTER!
         int16 msg_get = htons(1);
         write(sock, &msg_get, 2);
-        char b[1024];
+        uint8 b[1024];
 
         {
             int read_total_err = 0;
@@ -114,8 +107,9 @@ main(int argc, char** argv)
             fprintf(stderr, "%u ", (unsigned char)(b[i]));
         fprintf(stderr, "\n");
 
-        int16 msg_type = ntohs(*((int16*)b));
-        int32 dirnames_size = ntohl(*((int32*)(b + 2)));
+        int16 msg_type = unaligned_load_int16be(b);
+        int32 dirnames_size = unaligned_load_int32be(b + 2);
+
         fprintf(stderr, "Received back: action: %d size: %d.\n", msg_type, dirnames_size);
 
         char* names = malloc(dirnames_size + 1);
@@ -182,15 +176,16 @@ main(int argc, char** argv)
         uint16 msg_str_len = htons(choosen_name_len);
 
         exbuffer ebuf;
-        exbuffer_init(&ebuf, 4 + 4 + 2 + choosen_name_len);
+        size_t total_msg_size = 4 + 4 + 2 + choosen_name_len;
+        exbuffer_init(&ebuf, total_msg_size);
         exbuffer_append(&ebuf, (uint8*)(&msg_addr_from), 4);
         exbuffer_append(&ebuf, (uint8*)(&msg_addr_len), 4);
         exbuffer_append(&ebuf, (uint8*)(&msg_str_len), 2);
         exbuffer_append(&ebuf, (uint8*)sel_name, choosen_name_len);
 
-        assert(ebuf.size == (size_t)(4 + 4 + 2 + choosen_name_len));
-        assert(ebuf.capacity == (size_t)(4 + 4 + 2 + choosen_name_len));
-        write(sock, ebuf.data, ebuf.size);
+        assert(ebuf.size == total_msg_size);
+        assert(ebuf.capacity == total_msg_size);
+        write(sock, ebuf.data, ebuf.size); // TODO: CHECK!
 
         uint8 rcv_header[6];
         int read_total_err = 0;
@@ -202,8 +197,8 @@ main(int argc, char** argv)
             exit(-1);
         }
 
-        int16 code = ntohs(*((int16*)(rcv_header)));
-        int32 following = ntohl(*((int32*)(rcv_header + 2)));
+        int16 code = unaligned_load_int16be(rcv_header);
+        int32 following = unaligned_load_int32be(rcv_header + 2);
 
         fprintf(stderr, "Got response, code: %d, following: %d\n", code, following);
 

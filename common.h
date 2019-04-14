@@ -58,4 +58,12 @@ int read_total(int fd, uint8* buffer, size_t count);
 void
 die_witherrno(char const* filename, int line);
 
+
+// Im not entierly sure if they are needed, but I'm using them for
+// safetly. These are used to convert a string of bytes with random aligment to
+// the integers.
+uint16 unaligned_load_int16be(uint8* data);
+uint32 unaligned_load_int32be(uint8* data);
+
+
 #endif // COMMON_H

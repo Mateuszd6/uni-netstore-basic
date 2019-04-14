@@ -38,7 +38,7 @@ read_total(int fd, uint8* buffer, size_t count)
         }
 
         assert((size_t)bytes_red <= remained);
-        fprintf(stderr, "-> read_total: Got %d bytes\n", bytes_red);
+        fprintf(stderr, "-> read_total: Got %d bytes: '%.*s'\n", bytes_red, bytes_red, buffer + loaded);
         remained -= bytes_red;
         loaded += bytes_red;
     }
@@ -53,4 +53,26 @@ die_witherrno(char const* filename, int line)
            filename, line, errno, strerror(errno));
 
     exit(2);
+}
+
+uint16
+unaligned_load_int16be(uint8* data)
+{
+    uint16 retval = 0;
+    retval += (((uint16)(*data++)) << 8);
+    retval += (((uint16)(*data++)) << 0);
+
+    return retval;
+}
+
+uint32
+unaligned_load_int32be(uint8* data)
+{
+    uint32 retval = 0;
+    retval += (((uint32)(*data++)) << 24);
+    retval += (((uint32)(*data++)) << 16);
+    retval += (((uint32)(*data++)) << 8);
+    retval += (((uint32)(*data++)) << 0);
+
+    return retval;
 }
