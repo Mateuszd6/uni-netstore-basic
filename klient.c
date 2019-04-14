@@ -18,7 +18,7 @@ typedef struct
 {
     char const* host;
     char const* port;
-} input_data;
+} client_input_data;
 
 char const refuse_invalid_name[] = "Invalid file name.";
 char const refuse_invalid_address[] = "Invalid starting file address (out of range).";
@@ -45,10 +45,10 @@ make_temp_dir_if_not_exists()
     }
 }
 
-static input_data
+static client_input_data
 parse_input(int argc, char** argv)
 {
-    input_data retval;
+    client_input_data retval;
     if (argc < 2 || argc > 3)
         bad_usage(USAGE_MSG);
 
@@ -60,7 +60,7 @@ parse_input(int argc, char** argv)
 int
 main(int argc, char** argv)
 {
-    input_data idata = parse_input(argc, argv);
+    client_input_data idata = parse_input(argc, argv);
     printf("Input: host: %s, port: %s\n", idata.host, idata.port);
 
     // 'converting' host/port in string to struct addrinfo

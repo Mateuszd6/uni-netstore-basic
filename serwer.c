@@ -15,17 +15,16 @@
 #define USAGE_MSG "netstore-server <nazwa-katalogu-z-plikami> [<numer-portu-serwera>]"
 #define QUEUE_LEN (5)
 
-// TODO: Reneme them to client_input_data and server_input_data.
 typedef struct
 {
     char const* dirname;
     char const* port;
-} input_data;
+} server_input_data;
 
-static input_data
+static server_input_data
 parse_input(int argc, char** argv)
 {
-    input_data retval;
+    server_input_data retval;
     if (argc < 2 || argc > 3)
         bad_usage(USAGE_MSG);
 
@@ -76,25 +75,64 @@ get_file_size(FILE* fileptr)
     return retval;
 }
 
-// In the context this fucntion is called, we know that the len is > 0, and
-// offset is less than the size of the file, so out of this contract, the
-// behaviour should be considered undefinied.
-static char*
-read_file_offset(FILE* fileptr, size_t offset, size_t len)
+typedef struct
 {
-    CHECK(fseek(fileptr, offset, SEEK_SET));
-    char *string = malloc(len + 1);
-    int bytes_read = fread(string, 1, len, fileptr);
-    string[bytes_read] = 0;
+    char* content;
+    size_t size;
+    int error_code;
+} load_file_result;
 
-    return string;
+// If error_code of the returned structure is 0, then content and size contains
+// chunk of file that has to be sent to the client, otherwise the error code
+// should be sent in the refuse message.
+static load_file_result
+try_load_requested_chunk(char const* name, size_t addr_from, size_t addr_len)
+{
+    load_file_result retval;
+    retval.content = 0;
+    retval.size = 0;
+    retval.error_code = 0;
+
+    if (addr_len == 0)
+    {
+        fprintf(stderr, "ERROR: Given length is 0.\n");
+        retval.error_code = 3;
+    }
+    else
+    {
+        FILE* reqfile_ptr = fopen(name, "r");
+        if (!reqfile_ptr)
+        {
+            fprintf(stderr, "ERROR: File %s does not exists.\n", name);
+            retval.error_code = 1;
+        }
+        else
+        {
+            size_t reqfile_size = get_file_size(reqfile_ptr);
+            if (addr_from >= reqfile_size)
+            {
+                fprintf(stderr, "ERROR: Address is out of range.\n");
+                retval.error_code = 2;
+            }
+            else
+            {
+                CHECK(fseek(reqfile_ptr, addr_from, SEEK_SET));
+                retval.content = malloc(addr_len + 1);
+                retval.size = fread(retval.content, 1, addr_len, reqfile_ptr);
+                retval.content[retval.size] = 0;
+            }
+
+            fclose(reqfile_ptr);
+        }
+    }
+
+    return retval;
 }
 
 int
 main(int argc, char** argv)
 {
-    input_data idata = parse_input(argc, argv);
-
+    server_input_data idata = parse_input(argc, argv);
     int sock, msg_sock;
     struct sockaddr_in server_address;
     struct sockaddr_in client_address;
@@ -191,51 +229,22 @@ main(int argc, char** argv)
 
         CHECK(exbuffer_init(&ebuf, 1));
 
-        int error_code = 0;
-        char* reqfile = 0;
-
-        if (addr_len == 0)
-        {
-            fprintf(stderr, "ERROR: Given length is 0.\n");
-            error_code = 3;
-        }
-        else
-        {
-            FILE* reqfile_ptr = fopen((char*)name_buffer, "r");
-            if (!reqfile_ptr)
-            {
-                fprintf(stderr, "ERROR: File %s does not exists.\n", (char*)name_buffer);
-                error_code = 1;
-            }
-            else
-            {
-                size_t reqfile_size = get_file_size(reqfile_ptr);
-                if (addr_from >= reqfile_size)
-                {
-                    fprintf(stderr, "ERROR: Address is out of range.\n");
-                    error_code = 2;
-                }
-                else
-                {
-                    // We'have finally succeeded, so we read the file chunk.
-                    reqfile = read_file_offset(reqfile_ptr, addr_from, addr_len);
-                }
-
-                fclose(reqfile_ptr);
-            }
-        }
+        load_file_result load_result =
+            try_load_requested_chunk((char const*)name_buffer,
+                                     addr_from,
+                                     addr_len);
 
         // If there was no error, send the file to the client.
-        if (error_code == 0)
+        if (load_result.error_code == 0)
         {
-            int16 msg_code = htons(3);
-            int32 msg_filename = htonl(strlen(reqfile));
+            int16 msg_code = htons(3); // TODO: CONSTANT
+            int32 msg_filelen = htonl(load_result.size);
 
             CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_code), 2));
-            CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_filename), 4));
+            CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_filelen), 4));
             write(msg_sock, ebuf.data, ebuf.size);
 
-            size_t send_len = strlen(reqfile);
+            size_t send_len = load_result.size;
             size_t block_size = 512;
             for (size_t i = 0; i < send_len; i += block_size)
             {
@@ -244,22 +253,22 @@ main(int argc, char** argv)
                                     : block_size);
 
                 size_t send_data = 0;
-                CHECK(send_data = write(msg_sock, reqfile + i, chunk_len));
+                CHECK(send_data = write(msg_sock, load_result.content + i, chunk_len));
                 // TODO: Check if all bytes were sent.
             }
         }
         else // Otherwise send the refuse with an error code as a reason.
         {
             int16 msg_code = htons(2);
-            int32 msg_reason = htonl(error_code);
+            int32 msg_reason = htonl(load_result.error_code);
 
             CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_code), 2));
             CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_reason), 4));
             write(msg_sock, ebuf.data, ebuf.size);
         }
 
-        if (reqfile)
-            free(reqfile);
+        if (load_result.content)
+            free(load_result.content);
 
         // This is received while end.
         ssize_t end_msg_len = read(msg_sock, buffer, 2);
