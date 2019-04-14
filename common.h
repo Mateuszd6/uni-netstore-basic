@@ -43,10 +43,12 @@ void bad_usage(char const* usage_msg);
 // read, or 0 on success.
 int read_total(int fd, uint8* buffer, size_t count);
 
+int send_total(int fd, uint8* buffer, size_t count);
+
 #define CHECK(EXPR)                                                     \
     do {                                                                \
         int reterr_ = (EXPR);                                           \
-        if (reterr_ == -1)                                              \
+        if (reterr_ < 0)                                                \
             die_witherrno(__FILE__, __LINE__);                          \
     } while(0)
 

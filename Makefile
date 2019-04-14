@@ -5,8 +5,7 @@ CFLAGS=-march=native
 
 DISABLED_WARNINGS=-Wno-padded \
                   -Wno-sign-conversion
-SANITIZERS=
-# -fsanitize=address,undefined
+SANITIZERS=-fsanitize=address,undefined
 ifeq ($(CC),clang++)
 	WARN_FLAGS=-Weverything
 	DISABLED_WARNINGS += -Wno-c++98-compat-pedantic \

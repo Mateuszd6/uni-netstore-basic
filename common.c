@@ -38,9 +38,28 @@ read_total(int fd, uint8* buffer, size_t count)
         }
 
         assert((size_t)bytes_red <= remained);
-        fprintf(stderr, "-> read_total: Got %d bytes: '%.*s'\n", bytes_red, bytes_red, buffer + loaded);
+        fprintf(stderr, "-> read_total: Got %d bytes: '%.*s'\n",
+                bytes_red, bytes_red, buffer + loaded);
         remained -= bytes_red;
         loaded += bytes_red;
+    }
+
+    return 0;
+}
+
+// Split message into small buffers, not greater that 512 bytes long, and send
+// it to the sock.
+#define BLOCK_SIZE (5)
+
+int
+send_total(int fd, uint8* buffer, size_t count)
+{
+    for (size_t i = 0; i < count; i += BLOCK_SIZE)
+    {
+        size_t chunk_len = (i + BLOCK_SIZE > count ? count - i : BLOCK_SIZE);
+        size_t send_data = 0;
+        CHECK(send_data = write(fd, buffer + i, chunk_len));
+        // TODO: Check if all bytes were sent.
     }
 
     return 0;

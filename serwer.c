@@ -33,7 +33,8 @@ parse_input(int argc, char** argv)
     return retval;
 }
 
-// TODO(NEXT): Describe.
+// Write to the exbuffer all filenames from the directory with the given
+// name. The names are splited with '|'.
 static char const*
 get_folder_filenames(char const* dirname, exbuffer* ebufptr)
 {
@@ -46,7 +47,6 @@ get_folder_filenames(char const* dirname, exbuffer* ebufptr)
         {
             if (dir->d_type == DT_REG)
             {
-                // TODO: Ask if only files, or what to do with dirs!
                 char separator[] = "|";
                 CHECK(exbuffer_append(ebufptr, (uint8*)(dir->d_name), strlen(dir->d_name)));
                 CHECK(exbuffer_append(ebufptr, (uint8*)separator, 1)); // TODO: ARRAY_COUNT
@@ -96,7 +96,7 @@ try_load_requested_chunk(char const* name, size_t addr_from, size_t addr_len)
     if (addr_len == 0)
     {
         fprintf(stderr, "ERROR: Given length is 0.\n");
-        retval.error_code = 3;
+        retval.error_code = 3; // TODO: Constant
     }
     else
     {
@@ -104,7 +104,7 @@ try_load_requested_chunk(char const* name, size_t addr_from, size_t addr_len)
         if (!reqfile_ptr)
         {
             fprintf(stderr, "ERROR: File %s does not exists.\n", name);
-            retval.error_code = 1;
+            retval.error_code = 1; // TODO: Constant
         }
         else
         {
@@ -112,7 +112,7 @@ try_load_requested_chunk(char const* name, size_t addr_from, size_t addr_len)
             if (addr_from >= reqfile_size)
             {
                 fprintf(stderr, "ERROR: Address is out of range.\n");
-                retval.error_code = 2;
+                retval.error_code = 2; // TODO: Constant
             }
             else
             {
@@ -127,6 +127,114 @@ try_load_requested_chunk(char const* name, size_t addr_from, size_t addr_len)
     }
 
     return retval;
+}
+
+static int
+send_filenames(int msg_sock, char const* dirname)
+{
+    int16 num_to_send = htons(1); // TODO: Constant
+    int32 sizeof_filenames = 0; // We dont know yet how much space.
+    exbuffer ebuf;
+    CHECK(exbuffer_init(&ebuf, 0));
+    CHECK(exbuffer_append(&ebuf, (uint8*)(&num_to_send), 2));
+    CHECK(exbuffer_append(&ebuf, (uint8*)(&sizeof_filenames), 4));
+
+    // This will write finenames to the buffer.
+    get_folder_filenames(dirname, &ebuf);
+
+    // Now we know how much space filenames really take, so we override
+    // previously skipped bytes in the msg.
+    sizeof_filenames = htonl(ebuf.size - 6);
+    memcpy(ebuf.data + 2, (uint8*)(&sizeof_filenames), 4);
+
+    send_total(msg_sock, ebuf.data, ebuf.size);
+
+    fprintf(stderr, "Data was sent.\n");
+    exbuffer_free(&ebuf);
+
+    return 0;
+}
+
+
+typedef struct
+{
+    uint32 addr_from;
+    uint32 addr_len;
+    char* filename;
+    uint16 filename_len;
+} chunk_request;
+
+// TODO: Rename to rcv
+static int
+load_chunk_request(int msg_sock, chunk_request* req)
+{
+    uint8 header_buffer[10];
+    int read_total_err = 0;
+    read_total_err = read_total(msg_sock, header_buffer, 10);
+    if (read_total_err != 0) // Not a system error.
+    {
+        return -1;
+    }
+
+    req->addr_from = unaligned_load_int32be(header_buffer);
+    req->addr_len = unaligned_load_int32be(header_buffer + 4);
+    req->filename_len = unaligned_load_int16be(header_buffer + 8);
+
+    fprintf(stderr, "[%u - %u], filename has %u chars\n",
+            req->addr_from, req->addr_len, req->filename_len);
+
+    req->filename = malloc(req->filename_len + 1);
+    read_total_err = read_total(msg_sock, (uint8*)req->filename, req->filename_len);
+    if (read_total_err != 0) // Not a system error.
+    {
+        free(req->filename);
+        return -1;
+    }
+
+    req->filename[req->filename_len] = '\0';
+    fprintf(stderr, "Filename is: %s\n", req->filename);
+
+    return 0;
+}
+
+static int
+send_requested_filechunk(int msg_sock, chunk_request* request)
+{
+    exbuffer ebuf;
+    CHECK(exbuffer_init(&ebuf, 1));
+
+    load_file_result load_result =
+        try_load_requested_chunk(request->filename,
+                                 request->addr_from,
+                                 request->addr_len);
+
+    // If there was no error, send the file to the client.
+    if (load_result.error_code == 0)
+    {
+        int16 msg_code = htons(3); // TODO: CONSTANT
+        int32 msg_filelen = htonl(load_result.size);
+
+        CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_code), 2));
+        CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_filelen), 4));
+
+        // First header, then the message.
+        write(msg_sock, ebuf.data, ebuf.size);
+        send_total(msg_sock, (uint8*)load_result.content, load_result.size);
+    }
+    else // Otherwise send the refuse with an error code as a reason.
+    {
+        int16 msg_code = htons(2); // TODO: CONSTANT
+        int32 msg_reason = htonl(load_result.error_code);
+
+        CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_code), 2));
+        CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_reason), 4));
+        write(msg_sock, ebuf.data, ebuf.size);
+    }
+
+    if (load_result.content)
+        free(load_result.content);
+
+    return 0;
 }
 
 int
@@ -169,106 +277,44 @@ main(int argc, char** argv)
         if (read_total_err != 0) // TODO: Handle this case, and handle -1!!
         {
             fprintf(stderr, "Got 0, doing nothing!\n");
-            break;
+            close(msg_sock); // TODO: error.
+            continue;
         }
 
         int16 action_type = unaligned_load_int16be(buffer);
         fprintf(stderr, "rcved action type: %d\n", action_type);
 
-        int16 num_to_send = htons(1);
-        int32 sizeof_filenames = 0; // We dont know yet how much space.
-        exbuffer ebuf;
-        CHECK(exbuffer_init(&ebuf, 0));
-        CHECK(exbuffer_append(&ebuf, (uint8*)(&num_to_send), 2));
-        CHECK(exbuffer_append(&ebuf, (uint8*)(&sizeof_filenames), 4));
-
-        // This will write finenames to the buffer.
-        get_folder_filenames(idata.dirname, &ebuf);
-
-        // Now we know how much space filenames really take, so we override
-        // previously skipped bytes in the msg.
-        sizeof_filenames = htonl(ebuf.size - 6);
-        memcpy(ebuf.data + 2, (uint8*)(&sizeof_filenames), 4);
-
-        // TODO: Proper error handling.
-        size_t snd_len;
-        CHECK(snd_len = write(msg_sock, ebuf.data, ebuf.size));
-        if (snd_len != ebuf.size)
-            assert(!("writing to client socket"));
-        fprintf(stderr, "data was sent\n");
-        exbuffer_free(&ebuf);
-
-        uint8 header_buffer[10];
-        read_total_err = 0;
-        CHECK(read_total_err = read_total(msg_sock, header_buffer, 10));
-        if (read_total_err != 0) // Not a system error.
+        if (action_type == 1) // TODO: Constant
         {
-            // TODO!
-            fprintf(stderr, "Could not read everything!\n");
-            exit(-1);
-        }
+            send_filenames(msg_sock, idata.dirname);
 
-        uint32 addr_from = unaligned_load_int32be(header_buffer);
-        uint32 addr_len = unaligned_load_int32be(header_buffer + 4);
-        uint16 filename_len = unaligned_load_int16be(header_buffer + 8);
-
-        fprintf(stderr, "[%u - %u], filename has %u chars\n",
-                addr_from, addr_len, (uint16)filename_len);
-
-        uint8 name_buffer[filename_len + 1];
-        CHECK(read_total_err = read_total(msg_sock, name_buffer, filename_len));
-        if (read_total_err != 0) // Not a system error.
-        {
-            // TODO!
-            fprintf(stderr, "Could not read everything!\n");
-            exit(-1);
-        }
-
-        name_buffer[filename_len] = '\0';
-        fprintf(stderr, "Filename is: %s\n", name_buffer);
-
-        CHECK(exbuffer_init(&ebuf, 1));
-
-        load_file_result load_result =
-            try_load_requested_chunk((char const*)name_buffer,
-                                     addr_from,
-                                     addr_len);
-
-        // If there was no error, send the file to the client.
-        if (load_result.error_code == 0)
-        {
-            int16 msg_code = htons(3); // TODO: CONSTANT
-            int32 msg_filelen = htonl(load_result.size);
-
-            CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_code), 2));
-            CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_filelen), 4));
-            write(msg_sock, ebuf.data, ebuf.size);
-
-            size_t send_len = load_result.size;
-            size_t block_size = 512;
-            for (size_t i = 0; i < send_len; i += block_size)
+            // Now we expect the client to ask for the filechunk. If it does
+            // anything else, he should be considered rouge, and connection
+            // should be closed.
+            // TODO: This is a copypaste.
+            CHECK(read_total_err = read_total(msg_sock, buffer, 2));
+            if (read_total_err != 0) // TODO: Handle this case, and handle -1!!
             {
-                size_t chunk_len = (i + block_size > send_len
-                                    ? send_len - i
-                                    : block_size);
-
-                size_t send_data = 0;
-                CHECK(send_data = write(msg_sock, load_result.content + i, chunk_len));
-                // TODO: Check if all bytes were sent.
+                fprintf(stderr, "Got 0, doing nothing!\n");
+                close(msg_sock); // TODO: error.
+                continue;
             }
+
+            action_type = unaligned_load_int16be(buffer);
         }
-        else // Otherwise send the refuse with an error code as a reason.
+
+        if (action_type != 2) // TODO: Constant
         {
-            int16 msg_code = htons(2);
-            int32 msg_reason = htonl(load_result.error_code);
-
-            CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_code), 2));
-            CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_reason), 4));
-            write(msg_sock, ebuf.data, ebuf.size);
+            fprintf(stderr, "Got unexpeted request. Ignoring.\n");
+            close(msg_sock); // TODO: error.
+            continue;
         }
 
-        if (load_result.content)
-            free(load_result.content);
+        // TODO: Don't abort, just close the socket and continue.
+        chunk_request request;
+        CHECK(load_chunk_request(msg_sock, &request));
+        CHECK(send_requested_filechunk(msg_sock, &request));
+        free(request.filename);
 
         // This is received while end.
         ssize_t end_msg_len = read(msg_sock, buffer, 2);
