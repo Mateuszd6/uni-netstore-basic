@@ -115,11 +115,18 @@ try_load_requested_chunk(char const* dirname, char const* name,
     {
         size_t dirname_len = strlen(dirname);
         size_t name_len = strlen(name);
-        char path_combined[2 + dirname_len + 1 + name_len + 1];
-        strcpy(path_combined, "./");
-        strcpy(&path_combined[2], dirname);
-        strcpy(&path_combined[2 + dirname_len], "/");
-        strcpy(&path_combined[2 + dirname_len + 1], name);
+
+        // If dirname is absolute, we don't add ./ prefix.
+        char relative_prefix[] = "./";
+        char absolute_prefix[] = "";
+        char* prefix = (dirname[0] == '/' || dirname[0] == '~') ? absolute_prefix : relative_prefix;
+        size_t prefix_len = strlen(prefix);
+
+        char path_combined[prefix_len + dirname_len + 1 + name_len + 1];
+        strcpy(path_combined, prefix);
+        strcpy(&path_combined[prefix_len], dirname);
+        strcpy(&path_combined[prefix_len + dirname_len], "/");
+        strcpy(&path_combined[prefix_len + dirname_len + 1], name);
         fprintf(stderr, "Trying to open file at: %s\n", path_combined);
 
         FILE* reqfile_ptr = fopen(path_combined, "r");
@@ -219,33 +226,35 @@ send_requested_filechunk(int msg_sock,
                                  request->addr_from,
                                  request->addr_len);
 
-    // If there was no error, send the file to the client.
+    int16 msg_code;
+    int32 msg_filelen_or_refuse_reason;
+
+        // If there was no error, send the file to the client.
     if (load_result.error_code == 0)
     {
-        int16 msg_code = htons(PROT_RESP_FILECHUNK_OK);
-        int32 msg_filelen = htonl(load_result.size);
-
-        CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_code), 2));
-        CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_filelen), 4));
-
-        // First header, then the message.
-        write(msg_sock, ebuf.data, ebuf.size);
-        send_total(msg_sock, (uint8*)load_result.content, load_result.size);
+        msg_code = htons(PROT_RESP_FILECHUNK_OK);
+        msg_filelen_or_refuse_reason = htonl(load_result.size);
     }
-    else // Otherwise send the refuse with an error code as a reason.
+    else
     {
-        int16 msg_code = htons(PROT_RESP_FILECHUNK_ERROR);
-        int32 msg_reason = htonl(load_result.error_code);
-
-        CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_code), 2));
-        CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_reason), 4));
-        write(msg_sock, ebuf.data, ebuf.size);
+        msg_code = htons(PROT_RESP_FILECHUNK_ERROR);
+        msg_filelen_or_refuse_reason = htonl(load_result.error_code);
     }
 
+    CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_code), 2));
+    CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_filelen_or_refuse_reason), 4));
+    // load_result.size will be zero on error.
+    CHECK(exbuffer_append(&ebuf, (uint8*)load_result.content, load_result.size));
+
+    int snd_error;
+    snd_error = send_total(msg_sock, ebuf.data, ebuf.size);
+
+    exbuffer_free(&ebuf);
     if (load_result.content)
         free(load_result.content);
 
-    return 0;
+    // Return result of send_total, as it returns 0 on success, and -1 on fail.
+    return snd_error;
 }
 
 static int
@@ -341,6 +350,13 @@ main(int argc, char** argv)
             DROP_CONN();
 
         free(request.filename);
+
+        // This is received while end.
+        ssize_t end_msg_len = read(msg_sock, buffer, 2);
+        if (end_msg_len != 0) // TODO: Handle this case, and handle -1!!
+            fprintf(stderr, "Exit message has something! This is kind of bad!\n");
+        else
+            fprintf(stderr, "Client has eneded.\n");
 
         printf("ending connection\n");
         close(msg_sock); // TODO: error.

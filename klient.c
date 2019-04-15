@@ -258,7 +258,13 @@ init_and_connect(client_input_data* idata)
     addr_hints.ai_family = AF_INET; // IPv4
     addr_hints.ai_socktype = SOCK_STREAM;
     addr_hints.ai_protocol = IPPROTO_TCP;
-    CHECK(getaddrinfo(idata->host, idata->port, &addr_hints, &addr_result));
+    if (getaddrinfo(idata->host, idata->port, &addr_hints, &addr_result) != 0)
+    {
+        // With some reason, getaddrinfo does not set errno, so we have to set
+        // it manually before exitting with an error.
+        errno = EFAULT;
+        FAILWITH_ERRNO();
+    }
 
     int msg_sock;
     CHECK(msg_sock = socket(addr_result->ai_family,
