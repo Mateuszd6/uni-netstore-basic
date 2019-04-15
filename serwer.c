@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -57,12 +58,22 @@ static server_input_data parse_input(int argc, char **argv) {
 // name. The names are splited with '|'.
 static char const *get_folder_filenames(char const *dirname,
                                         exbuffer *ebufptr) {
+    size_t dirname_len = strlen(dirname);
+    char path_combined[dirname_len + 1 + NAME_MAX + 1];
+    strcpy(path_combined, dirname);
+    strcpy(&path_combined[dirname_len], "/");
+
+
+    // Dirent does not guarantee d_type so we use stat to select files only.
     DIR *d;
     if ((d = opendir(dirname))) {
         struct dirent *dir;
         int first_appended = 0;
         while ((dir = readdir(d)) != NULL) {
-            if (dir->d_type == DT_REG) {
+            struct stat filestat;
+            strcpy(&path_combined[dirname_len] + 1, dir->d_name);
+            stat(path_combined, &filestat);
+            if (S_ISREG(filestat.st_mode)) {
                 if (first_appended) {
                     char separator[] = "|";
                     CHECK(exbuffer_append(ebufptr, (uint8 *)separator,
