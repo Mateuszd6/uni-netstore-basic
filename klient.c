@@ -349,6 +349,6 @@ main(int argc, char** argv)
 
     free(selected_name);
     filechunk_request_free(&filereq);
-    CHECK(close(msg_sock)); // socket would be closed anyway when the program ends.
+    CHECK(close(msg_sock));
     return 0;
 }
