@@ -56,13 +56,19 @@ get_folder_filenames(char const* dirname, exbuffer* ebufptr)
     if ((d = opendir(dirname)))
     {
         struct dirent *dir;
+        int first_appended = 0;
         while ((dir = readdir(d)) != NULL)
         {
             if (dir->d_type == DT_REG)
             {
-                char separator[] = "|";
+                if (first_appended)
+                {
+                    char separator[] = "|";
+                    CHECK(exbuffer_append(ebufptr, (uint8*)separator, sizeof(separator) - 1));
+                }
+
+                first_appended = 1;
                 CHECK(exbuffer_append(ebufptr, (uint8*)(dir->d_name), strlen(dir->d_name)));
-                CHECK(exbuffer_append(ebufptr, (uint8*)separator, sizeof(separator) - 1));
             }
         }
 
@@ -92,7 +98,8 @@ get_file_size(FILE* fileptr)
 // chunk of file that has to be sent to the client, otherwise the error code
 // should be sent in the refuse message.
 static load_file_result
-try_load_requested_chunk(char const* name, size_t addr_from, size_t addr_len)
+try_load_requested_chunk(char const* dirname, char const* name,
+                         size_t addr_from, size_t addr_len)
 {
     load_file_result retval;
     retval.content = 0;
@@ -106,10 +113,19 @@ try_load_requested_chunk(char const* name, size_t addr_from, size_t addr_len)
     }
     else
     {
-        FILE* reqfile_ptr = fopen(name, "r");
+        size_t dirname_len = strlen(dirname);
+        size_t name_len = strlen(name);
+        char path_combined[2 + dirname_len + 1 + name_len + 1];
+        strcpy(path_combined, "./");
+        strcpy(&path_combined[2], dirname);
+        strcpy(&path_combined[2 + dirname_len], "/");
+        strcpy(&path_combined[2 + dirname_len + 1], name);
+        fprintf(stderr, "Trying to open file at: %s\n", path_combined);
+
+        FILE* reqfile_ptr = fopen(path_combined, "r");
         if (!reqfile_ptr)
         {
-            fprintf(stderr, "ERROR: File %s does not exists.\n", name);
+            fprintf(stderr, "ERROR: File %s does not exists.\n", path_combined);
             retval.error_code = FREQ_ERROR_ON_SUCH_FILE;
         }
         else
@@ -190,13 +206,16 @@ rcv_chunk_request(int msg_sock, chunk_request* req)
 }
 
 static int
-send_requested_filechunk(int msg_sock, chunk_request* request)
+send_requested_filechunk(int msg_sock,
+                         char const* dirname,
+                         chunk_request* request)
 {
     exbuffer ebuf;
     CHECK(exbuffer_init(&ebuf));
 
     load_file_result load_result =
-        try_load_requested_chunk(request->filename,
+        try_load_requested_chunk(dirname,
+                                 request->filename,
                                  request->addr_from,
                                  request->addr_len);
 
@@ -308,7 +327,7 @@ main(int argc, char** argv)
             action_type = unaligned_load_int16be(buffer);
         }
 
-        // In this case action type must be 2 or we are out of contract.
+        // In this case action type must be PROT_REQ_FILECHUNK or we are out of contract.
         if (action_type != PROT_REQ_FILECHUNK)
         {
             DROP_CONN_WITH_ROUGE();
@@ -318,12 +337,11 @@ main(int argc, char** argv)
         if ((rcv_chunk_request(msg_sock, &request)) == -1)
             DROP_CONN();
 
-        if ((send_requested_filechunk(msg_sock, &request)) == -1)
+        if ((send_requested_filechunk(msg_sock, idata.dirname, &request)) == -1)
             DROP_CONN();
 
         free(request.filename);
 
-	
         printf("ending connection\n");
         close(msg_sock); // TODO: error.
     }

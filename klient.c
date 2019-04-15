@@ -132,12 +132,18 @@ rcv_filelist(int msg_sock, filelist_request* req)
     if (msg_type != PROT_RESP_FILELIST)
     {
         fprintf(stderr, "Unexpeted response from server.\n");
-        exit(0);
+        exit(1);
     }
 
     int32 dirnames_size = unaligned_load_int32be(header_buf + 2);
 
     fprintf(stderr, "Received back: action: %d size: %d.\n", msg_type, dirnames_size);
+
+    if (dirnames_size == 0)
+    {
+        fprintf(stderr, "Directory contains no files!\n");
+        exit(0);
+    }
 
     char* names = malloc(dirnames_size + 1);
     if (!names)
@@ -165,7 +171,7 @@ rcv_filelist(int msg_sock, filelist_request* req)
     }
 
     req->filenames = names;
-    req->num_files = idx - 1;
+    req->num_files = idx;
 }
 
 static void
