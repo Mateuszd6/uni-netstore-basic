@@ -9,6 +9,10 @@
 #include "common.h"
 #include "err.h"
 
+// Split message into small buffers, not greater that 512 bytes long, and send
+// it to the sock. TODO: MAKE IT BIGGER DADDY!!
+#define BLOCK_SIZE (5)
+
 void
 bad_usage(char const* usage_msg)
 {
@@ -34,6 +38,7 @@ read_total(int fd, uint8* buffer, size_t count)
         if (bytes_red == 0)
         {
             fprintf(stderr, "Counldn't read exacly %ld bytes!\n", count);
+            errno = ESTRPIPE;
             return -1;
         }
 
@@ -47,20 +52,25 @@ read_total(int fd, uint8* buffer, size_t count)
     return 0;
 }
 
-// Split message into small buffers, not greater that 512 bytes long, and send
-// it to the sock. TODO: MAKE IT BIGGER DADDY!!
-#define BLOCK_SIZE (5)
-
 int
 send_total(int fd, uint8* buffer, size_t count)
 {
     for (size_t i = 0; i < count; i += BLOCK_SIZE)
     {
-        size_t chunk_len = (i + BLOCK_SIZE > count ? count - i : BLOCK_SIZE);
-        size_t send_data = 0;
+        ssize_t chunk_len = (i + BLOCK_SIZE > count ? count - i : BLOCK_SIZE);
+        ssize_t send_data = 0;
         send_data = write(fd, buffer + i, chunk_len);
-        if (send_data != chunk_len)
+        if (send_data == -1)
+        {
             return -1;
+        }
+
+        if (send_data != chunk_len)
+        {
+            fprintf(stderr, "Counldn't send exacly %ld bytes!\n", count);
+            errno = ESTRPIPE;
+            return -1;
+        }
     }
 
     return 0;

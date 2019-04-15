@@ -14,7 +14,7 @@ typedef struct
 } exbuffer;
 
 // -1 is returned when malloc failes, otherwise 0.
-int exbuffer_init(exbuffer* self, size_t initial_capacity);
+int exbuffer_init(exbuffer* self);
 
 void exbuffer_free(exbuffer* self);
 

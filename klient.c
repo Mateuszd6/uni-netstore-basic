@@ -87,6 +87,7 @@ write_to_tmp_file_at_offset(char const* filename, size_t offset,
         fprintf(stderr, "File is created, because it does not exist.\n");
     }
 
+    // If we failed creating file, system error has occured.
     if (!fileptr)
         FAILWITH_ERRNO();
 
@@ -139,6 +140,12 @@ rcv_filelist(int msg_sock, filelist_request* req)
     fprintf(stderr, "Received back: action: %d size: %d.\n", msg_type, dirnames_size);
 
     char* names = malloc(dirnames_size + 1);
+    if (!names)
+    {
+        errno = ENOMEM;
+        FAILWITH_ERRNO();
+    }
+
     CHECK(read_total(msg_sock, (uint8*)names, dirnames_size));
     char* curr = names;
     char* next = names;
@@ -146,7 +153,7 @@ rcv_filelist(int msg_sock, filelist_request* req)
     int32 idx = 0;
 
     // Because we've allocated one more byte for [names].
-    *end = '\0';
+    *end++ = '|';
 
     // Now we replace all '|' with zeros, so filenames are null separated.
     while ((curr = next) != end)
@@ -158,7 +165,7 @@ rcv_filelist(int msg_sock, filelist_request* req)
     }
 
     req->filenames = names;
-    req->num_files = idx;
+    req->num_files = idx - 1;
 }
 
 static void
@@ -180,6 +187,12 @@ rvc_filechunk(int msg_sock, filechunk_request* req)
     else if (code == PROT_RESP_FILECHUNK_OK)
     {
         req->data = malloc(following);
+        if (!req->data)
+        {
+            errno = ENOMEM;
+            FAILWITH_ERRNO();
+        }
+
         req->data_len = following;
         req->error_code = 0;
         CHECK(read_total(msg_sock, req->data, following));
@@ -217,7 +230,7 @@ send_file_request(int msg_sock, uint32 addr_from, uint32 addr_to,
     uint16 msg_str_len = htons(choosen_name_len);
 
     exbuffer ebuf;
-    CHECK(exbuffer_init(&ebuf, total_msg_size));
+    CHECK(exbuffer_init(&ebuf));
     CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_request_num), 2));
     CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_addr_from), 4));
     CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_addr_len), 4));
@@ -225,7 +238,6 @@ send_file_request(int msg_sock, uint32 addr_from, uint32 addr_to,
     CHECK(exbuffer_append(&ebuf, (uint8*)selected_name, choosen_name_len));
 
     assert(ebuf.size == total_msg_size);
-    assert(ebuf.capacity == total_msg_size);
     CHECK(write(msg_sock, ebuf.data, ebuf.size));
     exbuffer_free(&ebuf);
 }
@@ -267,7 +279,7 @@ main(int argc, char** argv)
     filelist_request filelist;
     rcv_filelist(msg_sock, &filelist);
 
-    printf("Dir contains:\n");
+    printf("Dir contains %lu files:\n", filelist.num_files);
     char const* curname = filelist.filenames;
     for (size_t i = 0; i < filelist.num_files; ++i)
     {

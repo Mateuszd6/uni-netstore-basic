@@ -141,7 +141,7 @@ send_filenames(int msg_sock, char const* dirname)
     int16 num_to_send = htons(PROT_RESP_FILELIST);
     int32 sizeof_filenames = 0; // We dont know yet how much space.
     exbuffer ebuf;
-    CHECK(exbuffer_init(&ebuf, 0));
+    CHECK(exbuffer_init(&ebuf));
     CHECK(exbuffer_append(&ebuf, (uint8*)(&num_to_send), 2));
     CHECK(exbuffer_append(&ebuf, (uint8*)(&sizeof_filenames), 4));
 
@@ -193,7 +193,7 @@ static int
 send_requested_filechunk(int msg_sock, chunk_request* request)
 {
     exbuffer ebuf;
-    CHECK(exbuffer_init(&ebuf, 1));
+    CHECK(exbuffer_init(&ebuf));
 
     load_file_result load_result =
         try_load_requested_chunk(request->filename,
@@ -323,13 +323,7 @@ main(int argc, char** argv)
 
         free(request.filename);
 
-        // This is received while end.
-        ssize_t end_msg_len = read(msg_sock, buffer, 2);
-        if (end_msg_len != 0) // TODO: Handle this case, and handle -1!!
-            fprintf(stderr, "Exit message has something! This is kind of bad!\n");
-        else
-            fprintf(stderr, "Client has eneded.\n");
-
+	
         printf("ending connection\n");
         close(msg_sock); // TODO: error.
     }

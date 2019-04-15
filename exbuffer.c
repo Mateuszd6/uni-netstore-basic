@@ -10,14 +10,12 @@
 #define EXBUFFER_MIN_INITAIL_CAPACITY (1)
 
 int
-exbuffer_init(exbuffer* self, size_t initial_capacity)
+exbuffer_init(exbuffer* self)
 {
-    // We init at least EXBUFFER_MIN_INITAIL_CAPACITY elements at start to avoid
-    // really small allocs.
-    if (initial_capacity < EXBUFFER_MIN_INITAIL_CAPACITY)
-        initial_capacity = EXBUFFER_MIN_INITAIL_CAPACITY;
+    // We init EXBUFFER_MIN_INITAIL_CAPACITY elements at start to avoid really
+    // small allocs.
 
-    self->data = malloc(initial_capacity);
+    self->data = malloc(EXBUFFER_MIN_INITAIL_CAPACITY);
     if (!self->data)
     {
         errno = ENOMEM;
@@ -25,7 +23,7 @@ exbuffer_init(exbuffer* self, size_t initial_capacity)
     }
 
     self->size = 0;
-    self->capacity = initial_capacity;
+    self->capacity = EXBUFFER_MIN_INITAIL_CAPACITY;
 
     return 0;
 }
