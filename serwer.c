@@ -285,7 +285,7 @@ init_and_bind(server_input_data* idata)
     {                                                                   \
         fprintf(stderr, "Connection droped.\n");                        \
         close(msg_sock);                                                \
-        continue;                                                       \
+        break;                                                          \
     } do { } while(0)
 
 #define DROP_CONN_WITH_ROUGE()                                          \
@@ -293,7 +293,7 @@ init_and_bind(server_input_data* idata)
         fprintf(stderr,                                                 \
                 "Client is out of contract. Connection droped.\n");     \
         close(msg_sock);                                                \
-        continue;                                                       \
+        break;                                                          \
     } do { } while(0)
 
 int
@@ -315,51 +315,47 @@ main(int argc, char** argv)
                                 (struct sockaddr*)&client_address,
                                 &client_address_len));
 
-        uint8 buffer[2];
-        if (read_total(msg_sock, buffer, 2) == -1)
-            DROP_CONN();
-
-        int16 action_type = unaligned_load_int16be(buffer);
-        fprintf(stderr, "rcved action type: %d\n", action_type);
-
-        if (action_type == PROT_REQ_FILELIST)
+        for (;;)
         {
-            if (send_filenames(msg_sock, idata.dirname) == -1)
+            uint8 buffer[2];
+            int try_read_total_result;
+            try_read_total_result = try_read_total(msg_sock, buffer, 2);
+            if (try_read_total_result == -1)
+            {
                 DROP_CONN();
+            }
+            else if (try_read_total_result == 0)
+            {
+                fprintf(stderr, "Client has ended connection.\n");
+                CHECK(close(msg_sock));
+                break;
+            }
 
-            // Now we expect the client to ask for the filechunk. If it does
-            // anything else, he should be considered rouge, and connection
-            // should be closed.
-            if (read_total(msg_sock, buffer, 2) == -1)
-                DROP_CONN();
+            int16 action_type = unaligned_load_int16be(buffer);
+            fprintf(stderr, "rcved action type: %d\n", action_type);
 
-            action_type = unaligned_load_int16be(buffer);
+            if (action_type == PROT_REQ_FILELIST)
+            {
+                if (send_filenames(msg_sock, idata.dirname) == -1)
+                    DROP_CONN();
+            }
+            else if (action_type == PROT_REQ_FILECHUNK)
+            {
+                chunk_request request;
+                if ((rcv_chunk_request(msg_sock, &request)) == -1)
+                    DROP_CONN();
+
+                if ((send_requested_filechunk(msg_sock, idata.dirname, &request)) == -1)
+                    DROP_CONN();
+
+                free(request.filename);
+            }
+            else
+            {
+                // We are out of contract, so break a conn with rouge client.
+                DROP_CONN_WITH_ROUGE();
+            }
         }
-
-        // In this case action type must be PROT_REQ_FILECHUNK or we are out of contract.
-        if (action_type != PROT_REQ_FILECHUNK)
-        {
-            DROP_CONN_WITH_ROUGE();
-        }
-
-        chunk_request request;
-        if ((rcv_chunk_request(msg_sock, &request)) == -1)
-            DROP_CONN();
-
-        if ((send_requested_filechunk(msg_sock, idata.dirname, &request)) == -1)
-            DROP_CONN();
-
-        free(request.filename);
-
-        // This is received while end.
-        ssize_t end_msg_len = read(msg_sock, buffer, 2);
-        if (end_msg_len != 0) // TODO: Handle this case, and handle -1!!
-            fprintf(stderr, "Exit message has something! This is kind of bad!\n");
-        else
-            fprintf(stderr, "Client has eneded.\n");
-
-        printf("ending connection\n");
-        close(msg_sock); // TODO: error.
     }
 
     return 0;

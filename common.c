@@ -9,9 +9,14 @@
 #include "common.h"
 #include "err.h"
 
-// Split message into small buffers, not greater that 512 bytes long, and send
-// it to the sock. TODO: MAKE IT BIGGER DADDY!!
-#define BLOCK_SIZE (5)
+void
+die_witherrno(char const* filename, int line)
+{
+    fprintf(stderr, "%s:%d: ERROR: function failed with: %d (%s).\n",
+           filename, line, errno, strerror(errno));
+
+    exit(2);
+}
 
 void
 bad_usage(char const* usage_msg)
@@ -20,14 +25,14 @@ bad_usage(char const* usage_msg)
     exit(0);
 }
 
-int
-read_total(int fd, uint8* buffer, size_t count)
+ssize_t
+try_read_total(int fd, uint8* buffer, size_t count)
 {
     if (count == 0)
         return 0;
 
-    size_t remained = count;
-    size_t loaded = 0;
+    ssize_t remained = count;
+    ssize_t loaded = 0;
     while (remained > 0)
     {
         // if read failed, return -1, the caller can check errno.
@@ -37,18 +42,37 @@ read_total(int fd, uint8* buffer, size_t count)
 
         if (bytes_red == 0)
         {
-            fprintf(stderr, "Counldn't read exacly %ld bytes!\n", count);
-            errno = ESTRPIPE;
-            return -1;
+            return loaded;
         }
 
-        assert((size_t)bytes_red <= remained);
+        assert(bytes_red <= remained);
         fprintf(stderr, "-> read_total: Got %d bytes: '%.*s'\n",
                 bytes_red, bytes_red, buffer + loaded);
         remained -= bytes_red;
         loaded += bytes_red;
     }
 
+    return loaded;
+}
+
+int
+read_total(int fd, uint8* buffer, size_t count)
+{
+    ssize_t retval = try_read_total(fd, buffer, count);
+
+    if (retval != (ssize_t)count)
+    {
+        if (retval != -1)
+        {
+            // There wasn't any system error, but we counldn't read all bytes.
+            // This means that the socket is destroyed and we set an errno and
+            // return an error.
+            fprintf(stderr, "Counldn't read exacly %ld bytes!\n", count);
+            errno = ESTRPIPE;
+        }
+
+        return -1;
+    }
     return 0;
 }
 
@@ -74,15 +98,6 @@ send_total(int fd, uint8* buffer, size_t count)
     }
 
     return 0;
-}
-
-void
-die_witherrno(char const* filename, int line)
-{
-    fprintf(stderr, "%s:%d: ERROR: function failed with: %d (%s).\n",
-           filename, line, errno, strerror(errno));
-
-    exit(2);
 }
 
 uint16
