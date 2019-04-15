@@ -28,20 +28,20 @@ typedef struct {
 typedef struct {
     char *filenames;
     size_t num_files;
-} filelist_request;
+} filelist_response;
 
 typedef struct {
     uint8 *data;
     size_t data_len;
     int32 error_code;
-} filechunk_request;
+} filechunk_response;
 
-void filelist_request_free(filelist_request *self) {
+void filelist_response_free(filelist_response *self) {
     if (self->filenames)
         free(self->filenames);
 }
 
-void filechunk_request_free(filechunk_request *self) {
+void filechunk_response_free(filechunk_response *self) {
     if (self->data)
         free(self->data);
 }
@@ -115,7 +115,7 @@ static inline void sanitize_selected_file_input(int32 filenum, int32 addr_from,
     }
 }
 
-static void rcv_filelist(int msg_sock, filelist_request *req) {
+static void rcv_filelist(int msg_sock, filelist_response *req) {
     uint8 header_buf[6];
     CHECK(rcv_total(msg_sock, (uint8 *)header_buf, 6));
 
@@ -161,13 +161,13 @@ static void rcv_filelist(int msg_sock, filelist_request *req) {
     req->num_files = idx;
 }
 
-static void rvc_filechunk(int msg_sock, filechunk_request *req) {
+static void rvc_filechunk(int msg_sock, filechunk_response *req) {
     uint8 rcv_header[6];
     CHECK(rcv_total(msg_sock, rcv_header, 6));
 
     int16 code = unaligned_load_int16be(rcv_header);
     int32 following = unaligned_load_int32be(rcv_header + 2);
-    fprintf(stderr, "Received filechunk from the server\n");
+    fprintf(stderr, "Received response from the server\n");
 
     if (code == PROT_RESP_FILECHUNK_ERROR) {
         req->data = 0;
@@ -191,7 +191,7 @@ static void rvc_filechunk(int msg_sock, filechunk_request *req) {
     }
 }
 
-static void snd_filelist_request(int msg_sock) {
+static void snd_filelist_response(int msg_sock) {
     int16 msg_get = htons(PROT_REQ_FILELIST);
     CHECK(write(msg_sock, &msg_get, 2));
 }
@@ -256,9 +256,9 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Input: host: %s, port: %s\n", idata.host, idata.port);
     int msg_sock = init_and_connect(&idata);
 
-    snd_filelist_request(msg_sock);
+    snd_filelist_response(msg_sock);
 
-    filelist_request filelist;
+    filelist_response filelist;
     rcv_filelist(msg_sock, &filelist);
 
     printf("Directory contains %lu files:\n", filelist.num_files);
@@ -290,25 +290,25 @@ int main(int argc, char **argv) {
     }
 
     char *selected_name = strdup(nameptr);
-    filelist_request_free(
+    filelist_response_free(
         &filelist); // We dont need filelist response any more.
     snd_file_request(msg_sock, addr_from, addr_to, selected_name);
 
-    filechunk_request filereq;
-    rvc_filechunk(msg_sock, &filereq);
+    filechunk_response filechunk;
+    rvc_filechunk(msg_sock, &filechunk);
 
     // If error code was set, server has refused.
-    if (filereq.error_code) {
+    if (filechunk.error_code) {
         printf("Server refused, reason: %s\n",
-               file_refuse_tostr(filereq.error_code));
+               file_refuse_tostr(filechunk.error_code));
     }
     else {
-        write_to_tmp_file_at_offset(selected_name, addr_from, filereq.data,
-                                    filereq.data_len);
+        write_to_tmp_file_at_offset(selected_name, addr_from, filechunk.data,
+                                    filechunk.data_len);
     }
 
     free(selected_name);
-    filechunk_request_free(&filereq);
+    filechunk_response_free(&filechunk);
     CHECK(close(msg_sock));
     return 0;
 }
