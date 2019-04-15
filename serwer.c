@@ -27,13 +27,6 @@ typedef struct
     int error_code;
 } load_file_result;
 
-void
-load_file_result_free(load_file_result* self)
-{
-    if (self->content)
-        free(self->content);
-}
-
 typedef struct
 {
     uint32 addr_from;
@@ -41,6 +34,13 @@ typedef struct
     char* filename;
     uint16 filename_len;
 } chunk_request;
+
+void
+load_file_result_free(load_file_result* self)
+{
+    if (self->content)
+        free(self->content);
+}
 
 void
 chunk_request_free(chunk_request* self)
@@ -90,7 +90,7 @@ get_folder_filenames(char const* dirname, exbuffer* ebufptr)
     }
     else
     {
-        fprintf(stderr, "Directory does not exists. Exitting.\n");
+        fprintf(stderr, "ERROR: Directory does not exists\n");
         errno = ENOTDIR;
         FAILWITH_ERRNO();
     }
@@ -122,7 +122,7 @@ try_load_requested_chunk(char const* dirname, char const* name,
 
     if (addr_len == 0)
     {
-        fprintf(stderr, "ERROR: Given length is 0.\n");
+        fprintf(stderr, "BAD REQUEST: Given length is 0\n");
         retval.error_code = FREQ_ERROR_ZERO_LEN;
     }
     else
@@ -135,18 +135,19 @@ try_load_requested_chunk(char const* dirname, char const* name,
         char absolute_prefix[] = "";
         char* prefix = (dirname[0] == '/' || dirname[0] == '~') ? absolute_prefix : relative_prefix;
         size_t prefix_len = strlen(prefix);
+        char separator[] = "/";
+        size_t separator_len = 1;
 
         char path_combined[prefix_len + dirname_len + 1 + name_len + 1];
         strcpy(path_combined, prefix);
         strcpy(&path_combined[prefix_len], dirname);
-        strcpy(&path_combined[prefix_len + dirname_len], "/");
-        strcpy(&path_combined[prefix_len + dirname_len + 1], name);
-        fprintf(stderr, "Trying to open file at: %s\n", path_combined);
+        strcpy(&path_combined[prefix_len + dirname_len], separator);
+        strcpy(&path_combined[prefix_len + dirname_len + separator_len], name);
 
         FILE* reqfile_ptr = fopen(path_combined, "r");
         if (!reqfile_ptr)
         {
-            fprintf(stderr, "ERROR: File %s does not exists.\n", path_combined);
+            fprintf(stderr, "BAD REQUEST: File %s does not exists\n", path_combined);
             retval.error_code = FREQ_ERROR_ON_SUCH_FILE;
         }
         else
@@ -154,15 +155,24 @@ try_load_requested_chunk(char const* dirname, char const* name,
             size_t reqfile_size = get_file_size(reqfile_ptr);
             if (addr_from >= reqfile_size)
             {
-                fprintf(stderr, "ERROR: Address is out of range.\n");
+                fprintf(stderr, "BAD REQUEST: Address is out of range\n");
                 retval.error_code = FREQ_ERROR_OUT_OF_RANGE;
             }
             else
             {
                 CHECK(fseek(reqfile_ptr, addr_from, SEEK_SET));
                 retval.content = malloc(addr_len + 1);
+                if (!retval.content)
+                {
+                    // Handle out of memory.
+                    errno = ENOMEM;
+                    FAILWITH_ERRNO();
+                }
+
                 retval.size = fread(retval.content, 1, addr_len, reqfile_ptr);
                 retval.content[retval.size] = 0;
+
+                fprintf(stderr, "REQUEST OK: File %s is available and in range\n", path_combined);
             }
 
             fclose(reqfile_ptr);
@@ -233,8 +243,7 @@ snd_filechunk(int msg_sock, char const* dirname, chunk_request* request)
     snd_error = snd_total(msg_sock, ebuf.data, ebuf.size);
 
     exbuffer_free(&ebuf);
-    if (load_result.content)
-        free(load_result.content);
+    load_file_result_free(&load_result);
 
     // Return result of snd_total, as it returns 0 on success, and -1 on fail.
     return snd_error;
@@ -252,18 +261,18 @@ rcv_chunk_request(int msg_sock, chunk_request* req)
     req->addr_len = unaligned_load_int32be(header_buffer + 4);
     req->filename_len = unaligned_load_int16be(header_buffer + 8);
 
-    fprintf(stderr, "[%u - %u], filename has %u chars\n",
-            req->addr_from, req->addr_len, req->filename_len);
 
     req->filename = malloc(req->filename_len + 1);
     if (rcv_total(msg_sock, (uint8*)req->filename, req->filename_len) == -1)
     {
-        free(req->filename);
+        chunk_request_free(req);
         return -1;
     }
 
     req->filename[req->filename_len] = '\0';
-    fprintf(stderr, "Filename is: %s\n", req->filename);
+
+    fprintf(stderr, "Received request for file: %s (%u bytes from %u)\n",
+            req->filename, req->addr_from, req->addr_len);
 
     return 0;
 }
@@ -294,7 +303,7 @@ init_and_bind(server_input_data* idata)
 
 #define DROP_CONN()                                                     \
     {                                                                   \
-        fprintf(stderr, "Connection droped.\n");                        \
+        fprintf(stderr, "Connection droped\n");                         \
         close(msg_sock);                                                \
         break;                                                          \
     } do { } while(0)
@@ -302,7 +311,7 @@ init_and_bind(server_input_data* idata)
 #define DROP_CONN_WITH_ROUGE()                                          \
     {                                                                   \
         fprintf(stderr,                                                 \
-                "Client is out of contract. Connection droped.\n");     \
+                "Client is out of contract. Connection droped\n");      \
         close(msg_sock);                                                \
         break;                                                          \
     } do { } while(0)
@@ -317,7 +326,7 @@ main(int argc, char** argv)
     socklen_t client_address_len;
     for (;;)
     {
-        fprintf(stderr, "Server awaits next clinet\n");
+        fprintf(stderr, "Server awaits for the next clinet\n");
 
         client_address_len = sizeof(client_address);
         // get client connection from the socket
@@ -337,29 +346,44 @@ main(int argc, char** argv)
             }
             else if (try_rcv_total_result == 0)
             {
-                fprintf(stderr, "Client has ended connection.\n");
+                fprintf(stderr, "Client has ended connection\n");
                 CHECK(close(msg_sock));
                 break;
             }
 
             int16 action_type = unaligned_load_int16be(buffer);
-            fprintf(stderr, "rcved action type: %d\n", action_type);
 
             if (action_type == PROT_REQ_FILELIST)
             {
+                fprintf(stderr, "Received request for a filelist\n");
                 if (snd_filenames(msg_sock, idata.dirname) == -1)
+                {
                     DROP_CONN();
+                }
+                else
+                {
+                    fprintf(stderr, "Filenames response has been sent\n");
+                }
             }
             else if (action_type == PROT_REQ_FILECHUNK)
             {
+                fprintf(stderr, "Received request for a filechunk\n");
                 chunk_request request;
                 if ((rcv_chunk_request(msg_sock, &request)) == -1)
+                {
                     DROP_CONN();
+                }
 
                 if ((snd_filechunk(msg_sock, idata.dirname, &request)) == -1)
+                {
                     DROP_CONN();
+                }
+                else
+                {
+                    fprintf(stderr, "Filechunk response has been sent\n");
+                }
 
-                free(request.filename);
+                chunk_request_free(&request);
             }
             else
             {

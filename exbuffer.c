@@ -6,8 +6,7 @@
 #include "common.h"
 #include "exbuffer.h"
 
-// TODO: MORE HERE!!!!
-#define EXBUFFER_MIN_INITAIL_CAPACITY (1)
+#define EXBUFFER_MIN_INITAIL_CAPACITY (128)
 
 int
 exbuffer_init(exbuffer* self)

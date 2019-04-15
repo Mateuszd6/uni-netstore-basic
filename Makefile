@@ -1,52 +1,42 @@
-.PHONY: all debug release clean clang_complete
+.PHONY: all debug release clean
 
 CC=gcc
-CFLAGS=-march=native
 
-DISABLED_WARNINGS=-Wno-padded \
-                  -Wno-sign-conversion
-SANITIZERS= #-fsanitize=address,undefined
-ifeq ($(CC),clang++)
-	WARN_FLAGS=-Weverything
-	DISABLED_WARNINGS += -Wno-c++98-compat-pedantic \
-			     -Wno-gnu-zero-variadic-macro-arguments \
-			     -Wno-vla -Wno-vla-extension
-else
-	WARN_FLAGS=-Wall -Wextra -Wshadow
-endif
-
+COMMON_CFLAGS=-march=native
 DEBUG_FLAGS=-g -O0 -DDEBUG -fno-omit-frame-pointer
 RELEASE_FLAGS=-O3 -DNDEBUG
 INCLUDE_FLAGS=-I.
+WARN_FLAGS=-Wall -Wextra -Wshadow
 
-all: debug
+# gcc on students has completly broken sanitizer dependencies.
+SANITIZERS= #-fsanitize=address,undefined
 
-debug:
-	$(CC) -c $(CFLAGS) $(WARN_FLAGS) $(DISABLED_WARNINGS) $(DEBUG_FLAGS)   \
-	$(INCLUDE_FLAGS) $(SANITIZERS) common.c -o common.o
+COMMON_OBJ=common.o exbuffer.o
+CLIENT_OBJ=klient.o
+SERVER_OBJ=serwer.o
 
-	$(CC) -c $(CFLAGS) $(WARN_FLAGS) $(DISABLED_WARNINGS) $(DEBUG_FLAGS)   \
-	$(INCLUDE_FLAGS) $(SANITIZERS) exbuffer.c -o exbuffer.o
+CLIENT_EXE=netstore-client
+SERVER_EXE=netstore-server
 
-	$(CC) $(CFLAGS) $(WARN_FLAGS) $(DISABLED_WARNINGS) $(DEBUG_FLAGS)   \
-	$(INCLUDE_FLAGS) $(SANITIZERS) serwer.c common.o exbuffer.o -o netstore-server
+release: CFLAGS=$(COMMON_CFLAGS) $(RELEASE_FLAGS) $(INCLUDE_FLAGS)
+release: all
 
-	$(CC) $(CFLAGS) $(WARN_FLAGS) $(DISABLED_WARNINGS) $(DEBUG_FLAGS)   \
-	$(INCLUDE_FLAGS) $(SANITIZERS) klient.c common.o exbuffer.o -o netstore-client
+debug: CFLAGS=$(COMMON_CFLAGS) $(SANITIZERS) $(DEBUG_FLAGS) $(INCLUDE_FLAGS)
+debug: all
 
-release:
-	$(CC) -c $(CFLAGS) $(WARN_FLAGS) $(DISABLED_WARNINGS) $(RELEASE_FLAGS)   \
-	$(INCLUDE_FLAGS) common.c -o common.o
+.c.o:
+	$(CC) $(CFLAGS) -c $< -o $@
 
-	$(CC) $(CFLAGS) $(WARN_FLAGS) $(DISABLED_WARNINGS) $(RELEASE_FLAGS) \
-	$(INCLUDE_FLAGS) serwer.c common.o -o netstore-server
+all: $(CLIENT_EXE) $(SERVER_EXE)
 
-	$(CC) $(CFLAGS) $(WARN_FLAGS) $(DISABLED_WARNINGS) $(RELEASE_FLAGS) \
-	$(INCLUDE_FLAGS) klient.c common.o -o netstore-client
 
-clang_complete:
-	echo $(INCLUDE_FLAGS) $(LINKER_FLAGS) > .clang_complete
+$(CLIENT_EXE): $(COMMON_OBJ) $(CLIENT_OBJ)
+	$(CC) $(COMMON_OBJ) $(CLIENT_OBJ) -o $(CLIENT_EXE)
+
+$(SERVER_EXE): $(COMMON_OBJ) $(SERVER_OBJ)
+	$(CC) $(COMMON_OBJ) $(SERVER_OBJ) -o $(SERVER_EXE)
 
 clean:
-	rm netstore-server
-	rm netstore-client
+	@rm -f *.o
+	@rm -f netstore-server
+	@rm -f netstore-client

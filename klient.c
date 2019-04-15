@@ -37,6 +37,18 @@ typedef struct
     int32 error_code;
 } filechunk_request;
 
+void filelist_request_free(filelist_request* self)
+{
+    if (self->filenames)
+        free(self->filenames);
+}
+
+void filechunk_request_free(filechunk_request* self)
+{
+    if (self->data)
+        free(self->data);
+}
+
 static client_input_data
 parse_input(int argc, char** argv)
 {
@@ -78,14 +90,10 @@ write_to_tmp_file_at_offset(char const* filename, size_t offset,
     strcpy(path_combined, outputdir);
     strcpy(&path_combined[outputdir_len], "/");
     strcpy(&path_combined[outputdir_len + 1], filename);
-    fprintf(stderr, "output path: %s\n", path_combined);
 
     FILE *fileptr = fopen(path_combined , "r+");
     if (!fileptr)
-    {
         fileptr = fopen(path_combined, "w+");
-        fprintf(stderr, "File is created, because it does not exist.\n");
-    }
 
     // If we failed creating file, system error has occured.
     if (!fileptr)
@@ -95,7 +103,7 @@ write_to_tmp_file_at_offset(char const* filename, size_t offset,
     CHECK(fwrite(data, 1, len, fileptr));
     CHECK(fclose(fileptr));
 
-    fprintf(stderr, "Wrote %lu bytes\n", len);
+    fprintf(stderr, "Sucesfully wrote %lu bytes to file %s\n", len, path_combined);
 }
 
 // This will exit if user-inserted values are invalid.
@@ -107,17 +115,17 @@ sanitize_selected_file_input(int32 filenum,
 {
     if (filenum < 0 || filenum >= total_files)
     {
-        fprintf(stderr, "File number out of range.\n");
+        fprintf(stderr, "ERROR: File number out of range\n");
         exit(1);
     }
     else if (addr_from < 0 || addr_to < 0)
     {
-        fprintf(stderr, "Invalid addres. Can't be negative.\n");
+        fprintf(stderr, "ERROR: Invalid addres. Can't be negative\n");
         exit(1);
     }
     else if (addr_to < addr_from)
     {
-        fprintf(stderr, "Invalid addres. Last is less that First.\n");
+        fprintf(stderr, "ERROR: Invalid addres. Last is less that First\n");
         exit(1);
     }
 }
@@ -131,17 +139,16 @@ rcv_filelist(int msg_sock, filelist_request* req)
     int16 msg_type = unaligned_load_int16be(header_buf);
     if (msg_type != PROT_RESP_FILELIST)
     {
-        fprintf(stderr, "Unexpeted response from server.\n");
+        fprintf(stderr, "ERROR: Unexpeted response from server\n");
         exit(1);
     }
 
+    fprintf(stderr, "Received filelist from the server\n");
+
     int32 dirnames_size = unaligned_load_int32be(header_buf + 2);
-
-    fprintf(stderr, "Received back: action: %d size: %d.\n", msg_type, dirnames_size);
-
     if (dirnames_size == 0)
     {
-        fprintf(stderr, "Directory contains no files!\n");
+        fprintf(stderr, "Directory contains no files. There is nothing to do\n");
         exit(0);
     }
 
@@ -157,6 +164,7 @@ rcv_filelist(int msg_sock, filelist_request* req)
     char* next = names;
     char* end = names + dirnames_size;
     int32 idx = 0;
+
 
     // Because we've allocated one more byte for [names].
     *end++ = '|';
@@ -182,7 +190,7 @@ rvc_filechunk(int msg_sock, filechunk_request* req)
 
     int16 code = unaligned_load_int16be(rcv_header);
     int32 following = unaligned_load_int32be(rcv_header + 2);
-    fprintf(stderr, "Got response, code: %d, following: %d\n", code, following);
+    fprintf(stderr, "Received filechunk from the server\n");
 
     if (code == PROT_RESP_FILECHUNK_ERROR)
     {
@@ -202,30 +210,26 @@ rvc_filechunk(int msg_sock, filechunk_request* req)
         req->data_len = following;
         req->error_code = 0;
         CHECK(rcv_total(msg_sock, req->data, following));
-
-        fprintf(stderr, "Got %u bytes of file.\n", following);
     }
     else
     {
-        fprintf(stderr, "Unexpeted response from server.\n");
+        fprintf(stderr, "ERROR: Unexpeted response from server\n");
         exit(1);
     }
 }
 
 static void
-send_filelist_request(int msg_sock)
+snd_filelist_request(int msg_sock)
 {
     int16 msg_get = htons(PROT_REQ_FILELIST);
     CHECK(write(msg_sock, &msg_get, 2));
 }
 
 static void
-send_file_request(int msg_sock, uint32 addr_from, uint32 addr_to,
+snd_file_request(int msg_sock, uint32 addr_from, uint32 addr_to,
                   char const* selected_name)
 {
     uint16 choosen_name_len = (uint16)strlen(selected_name);
-    printf("Selected file: %s Addr: %d - %d. \n",
-           selected_name, addr_from, addr_to);
 
     size_t total_msg_size = 2 + 4 + 4 + 2 + choosen_name_len;
 
@@ -246,6 +250,9 @@ send_file_request(int msg_sock, uint32 addr_from, uint32 addr_to,
     assert(ebuf.size == total_msg_size);
     CHECK(write(msg_sock, ebuf.data, ebuf.size));
     exbuffer_free(&ebuf);
+
+    fprintf(stderr, "Request for file %s addr: %u - %u has been sent\n",
+            selected_name, addr_from, addr_to);
 }
 
 static int
@@ -275,7 +282,7 @@ init_and_connect(client_input_data* idata)
     CHECK(connect(msg_sock, addr_result->ai_addr, addr_result->ai_addrlen));
     freeaddrinfo(addr_result);
 
-    fprintf(stderr, "Connecting succeeded.\n");
+    fprintf(stderr, "Connecting succeeded\n");
     return msg_sock;
 }
 
@@ -283,15 +290,15 @@ int
 main(int argc, char** argv)
 {
     client_input_data idata = parse_input(argc, argv);
-    printf("Input: host: %s, port: %s\n", idata.host, idata.port);
+    fprintf(stderr, "Input: host: %s, port: %s\n", idata.host, idata.port);
     int msg_sock = init_and_connect(&idata);
 
-    send_filelist_request(msg_sock);
+    snd_filelist_request(msg_sock);
 
     filelist_request filelist;
     rcv_filelist(msg_sock, &filelist);
 
-    printf("Dir contains %lu files:\n", filelist.num_files);
+    printf("Directory contains %lu files:\n", filelist.num_files);
     char const* curname = filelist.filenames;
     for (size_t i = 0; i < filelist.num_files; ++i)
     {
@@ -321,9 +328,8 @@ main(int argc, char** argv)
     }
 
     char* selected_name = strdup(nameptr);
-    free(filelist.filenames);
-
-    send_file_request(msg_sock, addr_from, addr_to, selected_name);
+    filelist_request_free(&filelist); // We dont need filelist response any more.
+    snd_file_request(msg_sock, addr_from, addr_to, selected_name);
 
     filechunk_request filereq;
     rvc_filechunk(msg_sock, &filereq);
@@ -342,7 +348,7 @@ main(int argc, char** argv)
     }
 
     free(selected_name);
-    free(filereq.data);
+    filechunk_request_free(&filereq);
     CHECK(close(msg_sock)); // socket would be closed anyway when the program ends.
     return 0;
 }

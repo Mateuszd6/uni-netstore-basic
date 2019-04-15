@@ -30,8 +30,8 @@ typedef double real64;
 static char const* const default_port = "6543";
 
 // Split message into small buffers, not greater that 512 bytes long, and send
-// it to the sock. TODO: MAKE IT BIGGER DADDY!!
-#define SND_SINGLE_BLOCK_SIZE (5)
+// it to the sock.
+#define SND_SINGLE_BLOCK_SIZE (512)
 
 // If check expression evaluates to negative number, kill the program. EXPR is
 // assumed to set an errno in that case.

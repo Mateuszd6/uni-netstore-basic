@@ -46,8 +46,6 @@ try_rcv_total(int fd, uint8* buffer, size_t count)
         }
 
         assert(bytes_red <= remained);
-        fprintf(stderr, "-> rcv_total: Got %d bytes: '%.*s'\n",
-                bytes_red, bytes_red, buffer + loaded);
         remained -= bytes_red;
         loaded += bytes_red;
     }
@@ -67,7 +65,6 @@ rcv_total(int fd, uint8* buffer, size_t count)
             // There wasn't any system error, but we counldn't read all bytes.
             // This means that the socket is destroyed and we set an errno and
             // return an error.
-            fprintf(stderr, "Counldn't read exacly %ld bytes!\n", count);
             errno = ESTRPIPE;
         }
 
@@ -93,7 +90,6 @@ snd_total(int fd, uint8* buffer, size_t count)
 
         if (send_data != chunk_len)
         {
-            fprintf(stderr, "Counldn't send exacly %ld bytes!\n", count);
             errno = ESTRPIPE;
             return -1;
         }
