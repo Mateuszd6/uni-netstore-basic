@@ -146,7 +146,7 @@ rcv_filelist(int msg_sock, filelist_request* req)
     int32 idx = 0;
 
     // Because we've allocated one more byte for [names].
-    *end = '\0';
+    *end++ = '|';
 
     // Now we replace all '|' with zeros, so filenames are null separated.
     while ((curr = next) != end)
