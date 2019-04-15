@@ -31,7 +31,7 @@ static char const* const default_port = "6543";
 
 // Split message into small buffers, not greater that 512 bytes long, and send
 // it to the sock. TODO: MAKE IT BIGGER DADDY!!
-#define BLOCK_SIZE (5)
+#define SND_SINGLE_BLOCK_SIZE (5)
 
 // If check expression evaluates to negative number, kill the program. EXPR is
 // assumed to set an errno in that case.
@@ -59,18 +59,18 @@ void bad_usage(char const* usage_msg);
 // than [count] it will be called again until exacly [count] bytes are
 // read. [buffer] is assumed to be at least [count] bytes long. Returns the
 // number of loaded bytes or -1 if there was a system errror.
-ssize_t try_read_total(int fd, uint8* buffer, size_t count);
+ssize_t try_rcv_total(int fd, uint8* buffer, size_t count);
 
-// Same as try_read_total, but treats reading insufficient number of bytes as an
+// Same as try_rcv_total, but treats reading insufficient number of bytes as an
 // error (This means that the socket was closed unexpetedly). In that case sets
 // an errno to indicate that this happend. Returns 0 on sucess or -1 on error.
-int read_total(int fd, uint8* buffer, size_t count);
+int rcv_total(int fd, uint8* buffer, size_t count);
 
 // Sends [count] bytes from the [buffer] to the given socket. Bytes are chopped
-// into chunks of size [BLOCK_SIZE] and then sent. Returns 0 on sucess or -1 on
-// failure (either if io failure or if socket was closed unexpetedly). In both
-// cases errno is set.
-int send_total(int fd, uint8* buffer, size_t count);
+// into chunks of size [SND_SINGLE_BLOCK_SIZE] and then sent. Returns 0 on
+// sucess or -1 on failure (either if io failure or if socket was closed
+// unexpetedly). In both cases errno is set.
+int snd_total(int fd, uint8* buffer, size_t count);
 
 // Im not entierly sure if they are needed, but I'm using them for
 // safetly. These are used to convert a string of bytes with random aligment to

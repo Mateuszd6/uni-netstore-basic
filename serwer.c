@@ -27,6 +27,13 @@ typedef struct
     int error_code;
 } load_file_result;
 
+void
+load_file_result_free(load_file_result* self)
+{
+    if (self->content)
+        free(self->content);
+}
+
 typedef struct
 {
     uint32 addr_from;
@@ -34,6 +41,13 @@ typedef struct
     char* filename;
     uint16 filename_len;
 } chunk_request;
+
+void
+chunk_request_free(chunk_request* self)
+{
+    if (self->filename)
+        free(self->filename);
+}
 
 static server_input_data
 parse_input(int argc, char** argv)
@@ -159,7 +173,7 @@ try_load_requested_chunk(char const* dirname, char const* name,
 }
 
 static int
-send_filenames(int msg_sock, char const* dirname)
+snd_filenames(int msg_sock, char const* dirname)
 {
     int16 num_to_send = htons(PROT_RESP_FILELIST);
     int32 sizeof_filenames = 0; // We dont know yet how much space.
@@ -176,46 +190,15 @@ send_filenames(int msg_sock, char const* dirname)
     sizeof_filenames = htonl(ebuf.size - 6);
     memcpy(ebuf.data + 2, (uint8*)(&sizeof_filenames), 4);
 
-    send_total(msg_sock, ebuf.data, ebuf.size);
-
-    fprintf(stderr, "Data was sent.\n");
+    int snd_error;
+    snd_error = snd_total(msg_sock, ebuf.data, ebuf.size);
     exbuffer_free(&ebuf);
 
-    return 0;
+    return snd_error;
 }
 
 static int
-rcv_chunk_request(int msg_sock, chunk_request* req)
-{
-    uint8 header_buffer[10];
-
-    if (read_total(msg_sock, header_buffer, 10) == -1)
-        return -1;
-
-    req->addr_from = unaligned_load_int32be(header_buffer);
-    req->addr_len = unaligned_load_int32be(header_buffer + 4);
-    req->filename_len = unaligned_load_int16be(header_buffer + 8);
-
-    fprintf(stderr, "[%u - %u], filename has %u chars\n",
-            req->addr_from, req->addr_len, req->filename_len);
-
-    req->filename = malloc(req->filename_len + 1);
-    if (read_total(msg_sock, (uint8*)req->filename, req->filename_len) == -1)
-    {
-        free(req->filename);
-        return -1;
-    }
-
-    req->filename[req->filename_len] = '\0';
-    fprintf(stderr, "Filename is: %s\n", req->filename);
-
-    return 0;
-}
-
-static int
-send_requested_filechunk(int msg_sock,
-                         char const* dirname,
-                         chunk_request* request)
+snd_filechunk(int msg_sock, char const* dirname, chunk_request* request)
 {
     exbuffer ebuf;
     CHECK(exbuffer_init(&ebuf));
@@ -229,7 +212,7 @@ send_requested_filechunk(int msg_sock,
     int16 msg_code;
     int32 msg_filelen_or_refuse_reason;
 
-        // If there was no error, send the file to the client.
+    // If there was no error, send the file to the client.
     if (load_result.error_code == 0)
     {
         msg_code = htons(PROT_RESP_FILECHUNK_OK);
@@ -247,14 +230,42 @@ send_requested_filechunk(int msg_sock,
     CHECK(exbuffer_append(&ebuf, (uint8*)load_result.content, load_result.size));
 
     int snd_error;
-    snd_error = send_total(msg_sock, ebuf.data, ebuf.size);
+    snd_error = snd_total(msg_sock, ebuf.data, ebuf.size);
 
     exbuffer_free(&ebuf);
     if (load_result.content)
         free(load_result.content);
 
-    // Return result of send_total, as it returns 0 on success, and -1 on fail.
+    // Return result of snd_total, as it returns 0 on success, and -1 on fail.
     return snd_error;
+}
+
+static int
+rcv_chunk_request(int msg_sock, chunk_request* req)
+{
+    uint8 header_buffer[10];
+
+    if (rcv_total(msg_sock, header_buffer, 10) == -1)
+        return -1;
+
+    req->addr_from = unaligned_load_int32be(header_buffer);
+    req->addr_len = unaligned_load_int32be(header_buffer + 4);
+    req->filename_len = unaligned_load_int16be(header_buffer + 8);
+
+    fprintf(stderr, "[%u - %u], filename has %u chars\n",
+            req->addr_from, req->addr_len, req->filename_len);
+
+    req->filename = malloc(req->filename_len + 1);
+    if (rcv_total(msg_sock, (uint8*)req->filename, req->filename_len) == -1)
+    {
+        free(req->filename);
+        return -1;
+    }
+
+    req->filename[req->filename_len] = '\0';
+    fprintf(stderr, "Filename is: %s\n", req->filename);
+
+    return 0;
 }
 
 static int
@@ -263,19 +274,19 @@ init_and_bind(server_input_data* idata)
     int sock;
     struct sockaddr_in server_address;
 
-    CHECK((sock = socket(PF_INET, SOCK_STREAM, 0))); // creating IPv4 TCP socket
+    // Create an IPv4 socket.
+    CHECK((sock = socket(PF_INET, SOCK_STREAM, 0)));
 
-    server_address.sin_family = AF_INET; // IPv4
-    server_address.sin_addr.s_addr = htonl(INADDR_ANY); // listening on all interfaces
-    server_address.sin_port = htons(atoi(idata->port)); // listening on port PORT_NUM
+    // IPv4, all interfaces, and port taken from input data.
+    server_address.sin_family = AF_INET;
+    server_address.sin_addr.s_addr = htonl(INADDR_ANY);
+    server_address.sin_port = htons(atoi(idata->port));
 
-    // bind the socket to a concrete address
+    // Bind the socket to a concrete address, and switch for listening.
     CHECK(bind(sock, (struct sockaddr*)&server_address, sizeof(server_address)));
-
-    // switch to listening (passive open)
     CHECK(listen(sock, SOMAXCONN));
 
-    printf("Listen succeeded. Accepting clients on port %hu\n",
+    printf("Accepting clients on port %hu\n",
            ntohs(server_address.sin_port));
 
     return sock;
@@ -318,13 +329,13 @@ main(int argc, char** argv)
         for (;;)
         {
             uint8 buffer[2];
-            int try_read_total_result;
-            try_read_total_result = try_read_total(msg_sock, buffer, 2);
-            if (try_read_total_result == -1)
+            int try_rcv_total_result;
+            try_rcv_total_result = try_rcv_total(msg_sock, buffer, 2);
+            if (try_rcv_total_result == -1)
             {
                 DROP_CONN();
             }
-            else if (try_read_total_result == 0)
+            else if (try_rcv_total_result == 0)
             {
                 fprintf(stderr, "Client has ended connection.\n");
                 CHECK(close(msg_sock));
@@ -336,7 +347,7 @@ main(int argc, char** argv)
 
             if (action_type == PROT_REQ_FILELIST)
             {
-                if (send_filenames(msg_sock, idata.dirname) == -1)
+                if (snd_filenames(msg_sock, idata.dirname) == -1)
                     DROP_CONN();
             }
             else if (action_type == PROT_REQ_FILECHUNK)
@@ -345,7 +356,7 @@ main(int argc, char** argv)
                 if ((rcv_chunk_request(msg_sock, &request)) == -1)
                     DROP_CONN();
 
-                if ((send_requested_filechunk(msg_sock, idata.dirname, &request)) == -1)
+                if ((snd_filechunk(msg_sock, idata.dirname, &request)) == -1)
                     DROP_CONN();
 
                 free(request.filename);

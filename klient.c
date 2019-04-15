@@ -126,7 +126,7 @@ static void
 rcv_filelist(int msg_sock, filelist_request* req)
 {
     uint8 header_buf[6];
-    CHECK(read_total(msg_sock, (uint8*)header_buf, 6));
+    CHECK(rcv_total(msg_sock, (uint8*)header_buf, 6));
 
     int16 msg_type = unaligned_load_int16be(header_buf);
     if (msg_type != PROT_RESP_FILELIST)
@@ -152,7 +152,7 @@ rcv_filelist(int msg_sock, filelist_request* req)
         FAILWITH_ERRNO();
     }
 
-    CHECK(read_total(msg_sock, (uint8*)names, dirnames_size));
+    CHECK(rcv_total(msg_sock, (uint8*)names, dirnames_size));
     char* curr = names;
     char* next = names;
     char* end = names + dirnames_size;
@@ -178,7 +178,7 @@ static void
 rvc_filechunk(int msg_sock, filechunk_request* req)
 {
     uint8 rcv_header[6];
-    CHECK(read_total(msg_sock, rcv_header, 6));
+    CHECK(rcv_total(msg_sock, rcv_header, 6));
 
     int16 code = unaligned_load_int16be(rcv_header);
     int32 following = unaligned_load_int32be(rcv_header + 2);
@@ -201,7 +201,7 @@ rvc_filechunk(int msg_sock, filechunk_request* req)
 
         req->data_len = following;
         req->error_code = 0;
-        CHECK(read_total(msg_sock, req->data, following));
+        CHECK(rcv_total(msg_sock, req->data, following));
 
         fprintf(stderr, "Got %u bytes of file.\n", following);
     }

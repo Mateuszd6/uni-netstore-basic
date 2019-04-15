@@ -26,7 +26,7 @@ bad_usage(char const* usage_msg)
 }
 
 ssize_t
-try_read_total(int fd, uint8* buffer, size_t count)
+try_rcv_total(int fd, uint8* buffer, size_t count)
 {
     if (count == 0)
         return 0;
@@ -46,7 +46,7 @@ try_read_total(int fd, uint8* buffer, size_t count)
         }
 
         assert(bytes_red <= remained);
-        fprintf(stderr, "-> read_total: Got %d bytes: '%.*s'\n",
+        fprintf(stderr, "-> rcv_total: Got %d bytes: '%.*s'\n",
                 bytes_red, bytes_red, buffer + loaded);
         remained -= bytes_red;
         loaded += bytes_red;
@@ -56,9 +56,9 @@ try_read_total(int fd, uint8* buffer, size_t count)
 }
 
 int
-read_total(int fd, uint8* buffer, size_t count)
+rcv_total(int fd, uint8* buffer, size_t count)
 {
-    ssize_t retval = try_read_total(fd, buffer, count);
+    ssize_t retval = try_rcv_total(fd, buffer, count);
 
     if (retval != (ssize_t)count)
     {
@@ -77,11 +77,13 @@ read_total(int fd, uint8* buffer, size_t count)
 }
 
 int
-send_total(int fd, uint8* buffer, size_t count)
+snd_total(int fd, uint8* buffer, size_t count)
 {
-    for (size_t i = 0; i < count; i += BLOCK_SIZE)
+    for (size_t i = 0; i < count; i += SND_SINGLE_BLOCK_SIZE)
     {
-        ssize_t chunk_len = (i + BLOCK_SIZE > count ? count - i : BLOCK_SIZE);
+        ssize_t chunk_len = (i + SND_SINGLE_BLOCK_SIZE > count
+                             ? count - i
+                             : SND_SINGLE_BLOCK_SIZE);
         ssize_t send_data = 0;
         send_data = write(fd, buffer + i, chunk_len);
         if (send_data == -1)
