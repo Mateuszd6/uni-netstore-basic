@@ -6,22 +6,21 @@
 
 #include "common.h"
 
-typedef struct
-{
-    uint8* data;
+typedef struct {
+    uint8 *data;
     size_t size;
     size_t capacity;
 } exbuffer;
 
 // -1 is returned when malloc failes, otherwise 0.
-int exbuffer_init(exbuffer* self);
+int exbuffer_init(exbuffer *self);
 
-void exbuffer_free(exbuffer* self);
-
-// -1 is returned when malloc/realloc failes, otherwise 0.
-int exbuffer_reserve(exbuffer* self, size_t min_capacity_after);
+void exbuffer_free(exbuffer *self);
 
 // -1 is returned when malloc/realloc failes, otherwise 0.
-int exbuffer_append(exbuffer* self, uint8* data, size_t len);
+int exbuffer_reserve(exbuffer *self, size_t min_capacity_after);
+
+// -1 is returned when malloc/realloc failes, otherwise 0.
+int exbuffer_append(exbuffer *self, uint8 *data, size_t len);
 
 #endif // EXBUFFER_H

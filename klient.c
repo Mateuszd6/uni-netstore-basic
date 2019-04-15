@@ -12,46 +12,41 @@
 #include "common.h"
 #include "exbuffer.h"
 
-#define USAGE_MSG "netstore_client <nazwa-lub-adres-IP4-serwera> [<numer-portu-serwera>]"
+#define USAGE_MSG                                                              \
+    "netstore_client <nazwa-lub-adres-IP4-serwera> [<numer-portu-serwera>]"
 
 char const refuse_invalid_name[] = "Invalid file name.";
-char const refuse_invalid_address[] = "Invalid starting file address (out of range).";
+char const refuse_invalid_address[] =
+    "Invalid starting file address (out of range).";
 char const refuse_invalid_len[] = "Region has length 0.";
 
-typedef struct
-{
-    char const* host;
-    char const* port;
+typedef struct {
+    char const *host;
+    char const *port;
 } client_input_data;
 
-typedef struct
-{
-    char* filenames;
+typedef struct {
+    char *filenames;
     size_t num_files;
 } filelist_request;
 
-typedef struct
-{
-    uint8* data;
+typedef struct {
+    uint8 *data;
     size_t data_len;
     int32 error_code;
 } filechunk_request;
 
-void filelist_request_free(filelist_request* self)
-{
+void filelist_request_free(filelist_request *self) {
     if (self->filenames)
         free(self->filenames);
 }
 
-void filechunk_request_free(filechunk_request* self)
-{
+void filechunk_request_free(filechunk_request *self) {
     if (self->data)
         free(self->data);
 }
 
-static client_input_data
-parse_input(int argc, char** argv)
-{
+static client_input_data parse_input(int argc, char **argv) {
     client_input_data retval;
     if (argc < 2 || argc > 3)
         bad_usage(USAGE_MSG);
@@ -61,9 +56,7 @@ parse_input(int argc, char** argv)
     return retval;
 }
 
-static inline char const*
-file_refuse_tostr(int32 refuse_code)
-{
+static inline char const *file_refuse_tostr(int32 refuse_code) {
     if (refuse_code == FREQ_ERROR_ON_SUCH_FILE)
         return refuse_invalid_name;
     else if (refuse_code == FREQ_ERROR_OUT_OF_RANGE)
@@ -72,13 +65,10 @@ file_refuse_tostr(int32 refuse_code)
         return refuse_invalid_len;
 }
 
-static void
-write_to_tmp_file_at_offset(char const* filename, size_t offset,
-                            uint8* data, size_t len)
-{
+static void write_to_tmp_file_at_offset(char const *filename, size_t offset,
+                                        uint8 *data, size_t len) {
     int mkdir_result = mkdir("./tmp", 0777);
-    if (mkdir_result == -1 && errno != EEXIST)
-    {
+    if (mkdir_result == -1 && errno != EEXIST) {
         // If makedir returned other error than one indicating that dir exists,
         // we can't do much so we exit with an error.
         FAILWITH_ERRNO();
@@ -91,7 +81,7 @@ write_to_tmp_file_at_offset(char const* filename, size_t offset,
     strcpy(&path_combined[outputdir_len], "/");
     strcpy(&path_combined[outputdir_len + 1], filename);
 
-    FILE *fileptr = fopen(path_combined , "r+");
+    FILE *fileptr = fopen(path_combined, "r+");
     if (!fileptr)
         fileptr = fopen(path_combined, "w+");
 
@@ -103,42 +93,34 @@ write_to_tmp_file_at_offset(char const* filename, size_t offset,
     CHECK(fwrite(data, 1, len, fileptr));
     CHECK(fclose(fileptr));
 
-    fprintf(stderr, "Sucesfully wrote %lu bytes to file %s\n", len, path_combined);
+    fprintf(stderr, "Sucesfully wrote %lu bytes to file %s\n", len,
+            path_combined);
 }
 
 // This will exit if user-inserted values are invalid.
-static inline void
-sanitize_selected_file_input(int32 filenum,
-                             int32 addr_from,
-                             int32 addr_to,
-                             int32 total_files)
-{
-    if (filenum < 0 || filenum >= total_files)
-    {
+static inline void sanitize_selected_file_input(int32 filenum, int32 addr_from,
+                                                int32 addr_to,
+                                                int32 total_files) {
+    if (filenum < 0 || filenum >= total_files) {
         fprintf(stderr, "ERROR: File number out of range\n");
         exit(1);
     }
-    else if (addr_from < 0 || addr_to < 0)
-    {
+    else if (addr_from < 0 || addr_to < 0) {
         fprintf(stderr, "ERROR: Invalid addres. Can't be negative\n");
         exit(1);
     }
-    else if (addr_to < addr_from)
-    {
+    else if (addr_to < addr_from) {
         fprintf(stderr, "ERROR: Invalid addres. Last is less that First\n");
         exit(1);
     }
 }
 
-static void
-rcv_filelist(int msg_sock, filelist_request* req)
-{
+static void rcv_filelist(int msg_sock, filelist_request *req) {
     uint8 header_buf[6];
-    CHECK(rcv_total(msg_sock, (uint8*)header_buf, 6));
+    CHECK(rcv_total(msg_sock, (uint8 *)header_buf, 6));
 
     int16 msg_type = unaligned_load_int16be(header_buf);
-    if (msg_type != PROT_RESP_FILELIST)
-    {
+    if (msg_type != PROT_RESP_FILELIST) {
         fprintf(stderr, "ERROR: Unexpeted response from server\n");
         exit(1);
     }
@@ -146,33 +128,30 @@ rcv_filelist(int msg_sock, filelist_request* req)
     fprintf(stderr, "Received filelist from the server\n");
 
     int32 dirnames_size = unaligned_load_int32be(header_buf + 2);
-    if (dirnames_size == 0)
-    {
-        fprintf(stderr, "Directory contains no files. There is nothing to do\n");
+    if (dirnames_size == 0) {
+        fprintf(stderr,
+                "Directory contains no files. There is nothing to do\n");
         exit(0);
     }
 
-    char* names = malloc(dirnames_size + 1);
-    if (!names)
-    {
+    char *names = malloc(dirnames_size + 1);
+    if (!names) {
         errno = ENOMEM;
         FAILWITH_ERRNO();
     }
 
-    CHECK(rcv_total(msg_sock, (uint8*)names, dirnames_size));
-    char* curr = names;
-    char* next = names;
-    char* end = names + dirnames_size;
+    CHECK(rcv_total(msg_sock, (uint8 *)names, dirnames_size));
+    char *curr = names;
+    char *next = names;
+    char *end = names + dirnames_size;
     int32 idx = 0;
-
 
     // Because we've allocated one more byte for [names].
     *end++ = '|';
 
     // Now we replace all '|' with zeros, so filenames are null separated.
-    while ((curr = next) != end)
-    {
-        while(*next != '|')
+    while ((curr = next) != end) {
+        while (*next != '|')
             ++next;
         *next++ = '\0';
         idx++;
@@ -182,9 +161,7 @@ rcv_filelist(int msg_sock, filelist_request* req)
     req->num_files = idx;
 }
 
-static void
-rvc_filechunk(int msg_sock, filechunk_request* req)
-{
+static void rvc_filechunk(int msg_sock, filechunk_request *req) {
     uint8 rcv_header[6];
     CHECK(rcv_total(msg_sock, rcv_header, 6));
 
@@ -192,17 +169,14 @@ rvc_filechunk(int msg_sock, filechunk_request* req)
     int32 following = unaligned_load_int32be(rcv_header + 2);
     fprintf(stderr, "Received filechunk from the server\n");
 
-    if (code == PROT_RESP_FILECHUNK_ERROR)
-    {
+    if (code == PROT_RESP_FILECHUNK_ERROR) {
         req->data = 0;
         req->data_len = 0;
         req->error_code = following;
     }
-    else if (code == PROT_RESP_FILECHUNK_OK)
-    {
+    else if (code == PROT_RESP_FILECHUNK_OK) {
         req->data = malloc(following);
-        if (!req->data)
-        {
+        if (!req->data) {
             errno = ENOMEM;
             FAILWITH_ERRNO();
         }
@@ -211,24 +185,19 @@ rvc_filechunk(int msg_sock, filechunk_request* req)
         req->error_code = 0;
         CHECK(rcv_total(msg_sock, req->data, following));
     }
-    else
-    {
+    else {
         fprintf(stderr, "ERROR: Unexpeted response from server\n");
         exit(1);
     }
 }
 
-static void
-snd_filelist_request(int msg_sock)
-{
+static void snd_filelist_request(int msg_sock) {
     int16 msg_get = htons(PROT_REQ_FILELIST);
     CHECK(write(msg_sock, &msg_get, 2));
 }
 
-static void
-snd_file_request(int msg_sock, uint32 addr_from, uint32 addr_to,
-                  char const* selected_name)
-{
+static void snd_file_request(int msg_sock, uint32 addr_from, uint32 addr_to,
+                             char const *selected_name) {
     uint16 choosen_name_len = (uint16)strlen(selected_name);
 
     size_t total_msg_size = 2 + 4 + 4 + 2 + choosen_name_len;
@@ -241,11 +210,11 @@ snd_file_request(int msg_sock, uint32 addr_from, uint32 addr_to,
 
     exbuffer ebuf;
     CHECK(exbuffer_init(&ebuf));
-    CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_request_num), 2));
-    CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_addr_from), 4));
-    CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_addr_len), 4));
-    CHECK(exbuffer_append(&ebuf, (uint8*)(&msg_str_len), 2));
-    CHECK(exbuffer_append(&ebuf, (uint8*)selected_name, choosen_name_len));
+    CHECK(exbuffer_append(&ebuf, (uint8 *)(&msg_request_num), 2));
+    CHECK(exbuffer_append(&ebuf, (uint8 *)(&msg_addr_from), 4));
+    CHECK(exbuffer_append(&ebuf, (uint8 *)(&msg_addr_len), 4));
+    CHECK(exbuffer_append(&ebuf, (uint8 *)(&msg_str_len), 2));
+    CHECK(exbuffer_append(&ebuf, (uint8 *)selected_name, choosen_name_len));
 
     assert(ebuf.size == total_msg_size);
     CHECK(write(msg_sock, ebuf.data, ebuf.size));
@@ -255,18 +224,15 @@ snd_file_request(int msg_sock, uint32 addr_from, uint32 addr_to,
             selected_name, addr_from, addr_to);
 }
 
-static int
-init_and_connect(client_input_data* idata)
-{
+static int init_and_connect(client_input_data *idata) {
     // 'converting' host/port in string to struct addrinfo
     struct addrinfo addr_hints;
-    struct addrinfo* addr_result;
+    struct addrinfo *addr_result;
     memset(&addr_hints, 0, sizeof(struct addrinfo));
     addr_hints.ai_family = AF_INET; // IPv4
     addr_hints.ai_socktype = SOCK_STREAM;
     addr_hints.ai_protocol = IPPROTO_TCP;
-    if (getaddrinfo(idata->host, idata->port, &addr_hints, &addr_result) != 0)
-    {
+    if (getaddrinfo(idata->host, idata->port, &addr_hints, &addr_result) != 0) {
         // With some reason, getaddrinfo does not set errno, so we have to set
         // it manually before exitting with an error.
         errno = EFAULT;
@@ -274,8 +240,7 @@ init_and_connect(client_input_data* idata)
     }
 
     int msg_sock;
-    CHECK(msg_sock = socket(addr_result->ai_family,
-                            addr_result->ai_socktype,
+    CHECK(msg_sock = socket(addr_result->ai_family, addr_result->ai_socktype,
                             addr_result->ai_protocol));
 
     // connect socket to the server
@@ -286,9 +251,7 @@ init_and_connect(client_input_data* idata)
     return msg_sock;
 }
 
-int
-main(int argc, char** argv)
-{
+int main(int argc, char **argv) {
     client_input_data idata = parse_input(argc, argv);
     fprintf(stderr, "Input: host: %s, port: %s\n", idata.host, idata.port);
     int msg_sock = init_and_connect(&idata);
@@ -299,9 +262,8 @@ main(int argc, char** argv)
     rcv_filelist(msg_sock, &filelist);
 
     printf("Directory contains %lu files:\n", filelist.num_files);
-    char const* curname = filelist.filenames;
-    for (size_t i = 0; i < filelist.num_files; ++i)
-    {
+    char const *curname = filelist.filenames;
+    for (size_t i = 0; i < filelist.num_files; ++i) {
         printf("%lu. %s\n", i, curname);
         curname = strchr(curname, '\0');
         assert(curname); // We know how many zero is there, so we must succeed.
@@ -317,34 +279,32 @@ main(int argc, char** argv)
     scanf("%d", &addr_to);
 
     // If this won't exit program, inserted values are valid.
-    sanitize_selected_file_input(number, addr_from, addr_to, filelist.num_files);
+    sanitize_selected_file_input(number, addr_from, addr_to,
+                                 filelist.num_files);
 
-    char const* nameptr = filelist.filenames;
-    for (int32 i = 0; i != number; ++i)
-    {
+    char const *nameptr = filelist.filenames;
+    for (int32 i = 0; i != number; ++i) {
         nameptr = strchr(nameptr, '\0');
         assert(nameptr);
         ++nameptr;
     }
 
-    char* selected_name = strdup(nameptr);
-    filelist_request_free(&filelist); // We dont need filelist response any more.
+    char *selected_name = strdup(nameptr);
+    filelist_request_free(
+        &filelist); // We dont need filelist response any more.
     snd_file_request(msg_sock, addr_from, addr_to, selected_name);
 
     filechunk_request filereq;
     rvc_filechunk(msg_sock, &filereq);
 
     // If error code was set, server has refused.
-    if (filereq.error_code)
-    {
+    if (filereq.error_code) {
         printf("Server refused, reason: %s\n",
                file_refuse_tostr(filereq.error_code));
     }
-    else
-    {
-        write_to_tmp_file_at_offset(selected_name, addr_from,
-                                    filereq.data, filereq.data_len);
-
+    else {
+        write_to_tmp_file_at_offset(selected_name, addr_from, filereq.data,
+                                    filereq.data_len);
     }
 
     free(selected_name);
